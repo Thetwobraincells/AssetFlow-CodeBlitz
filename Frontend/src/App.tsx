@@ -2,6 +2,7 @@ import { useState } from "react";
 import AppShell from "./layouts/AppShell";
 import Dashboard from "./screens/Dashboard";
 import AssetDirectory from "./screens/AssetDirectory";
+import AssetDetail from "./screens/AssetDetail";
 import Allocations from "./screens/Allocations";
 import Bookings from "./screens/Bookings";
 import Maintenance from "./screens/Maintenance";
@@ -12,16 +13,30 @@ import Reports from "./screens/Reports";
 import Login from "./screens/Login";
 
 function App() {
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [isLoggedIn, setIsLoggedIn]     = useState(false);
   const [activeScreen, setActiveScreen] = useState("dashboard");
+  const [detailTag, setDetailTag]       = useState<string | null>(null);
 
   if (!isLoggedIn) {
     return <Login onLoginSuccess={() => setIsLoggedIn(true)} />;
   }
 
+  function openDetail(tag: string) {
+    setDetailTag(tag);
+    setActiveScreen("asset-detail");
+  }
+
+  function closeDetail() {
+    setDetailTag(null);
+    setActiveScreen("assets");
+  }
+
   const renderScreen = () => {
     switch (activeScreen) {
-      case "assets":        return <AssetDirectory />;
+      case "assets":
+        return <AssetDirectory onOpenDetail={openDetail} />;
+      case "asset-detail":
+        return detailTag ? <AssetDetail tag={detailTag} onBack={closeDetail} /> : <AssetDirectory onOpenDetail={openDetail} />;
       case "allocations":   return <Allocations />;
       case "bookings":      return <Bookings />;
       case "maintenance":   return <Maintenance />;
@@ -31,14 +46,20 @@ function App() {
       case "notifications": return <LogsNotifications key="notifications" initialTab="Notifications" />;
       case "logs":          return <LogsNotifications key="logs" initialTab="Activity Log" />;
       case "dashboard":
-      default:              return <Dashboard />;
+      default:              return <Dashboard onNavigate={handleNavSelect} />;
     }
   };
 
+  function handleNavSelect(screen: string) {
+    // Clear detail context when navigating away
+    if (screen !== "asset-detail") setDetailTag(null);
+    setActiveScreen(screen);
+  }
+
   return (
     <AppShell
-      active={activeScreen}
-      onSelect={setActiveScreen}
+      active={activeScreen === "asset-detail" ? "assets" : activeScreen}
+      onSelect={handleNavSelect}
       onLogout={() => setIsLoggedIn(false)}
     >
       {renderScreen()}

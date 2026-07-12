@@ -1,6 +1,7 @@
 import { useState } from "react";
 import Modal from "./Modal";
 import Button from "./Button";
+import { useToast } from "./Toast";
 
 const conditions = ["Excellent", "Good", "Fair", "Poor"];
 const categoryOptions = ["Electronics", "Furniture", "Vehicles"];
@@ -8,10 +9,11 @@ const categoryOptions = ["Electronics", "Furniture", "Vehicles"];
 export default function RegisterAssetModal({ onClose }: { onClose: () => void }) {
   const [condition, setCondition] = useState("Excellent");
   const [bookable, setBookable] = useState(false);
+  const { show, ToastOutlet } = useToast();
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    // Dummy submit — no backend yet, just closes the modal.
+    show("Asset registered successfully.", "success");
     onClose();
   }
 
@@ -115,9 +117,10 @@ export default function RegisterAssetModal({ onClose }: { onClose: () => void })
 
         <div className="flex justify-end gap-2 pt-2">
           <Button variant="ghost" onClick={onClose}>Cancel</Button>
-          <Button variant="primary">Register Asset</Button>
+          <Button variant="primary" type="submit">Register Asset</Button>
         </div>
       </form>
+      {ToastOutlet}
     </Modal>
   );
 }

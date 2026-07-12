@@ -4,6 +4,7 @@ import {
 } from "lucide-react";
 import StatCard from "../components/StatCard";
 import Button from "../components/Button";
+import { useToast } from "../components/Toast";
 
 /* ---------- Mock data ---------- */
 
@@ -117,11 +118,12 @@ const ranges = ["Last 7 days", "Last 30 days", "Last 90 days", "Year to date"];
 
 export default function Reports() {
   const [range, setRange] = useState(ranges[1]);
+  const { show, ToastOutlet } = useToast();
 
   function handleExport() {
     // Dummy export — no backend yet. Swap for a real
     // GET /reports/export?type=csv call once the endpoint exists.
-    alert("Export queued — CSV will be wired once /reports/export is live.");
+    show("Export queued — CSV will be wired once /reports/export is live.", "info");
   }
 
   return (
@@ -226,6 +228,7 @@ export default function Reports() {
           </div>
         </div>
       </Panel>
+      {ToastOutlet}
     </div>
   );
 }

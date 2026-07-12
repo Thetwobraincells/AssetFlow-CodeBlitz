@@ -3,7 +3,6 @@ import {
 } from "lucide-react";
 import StatCard from "../components/StatCard";
 import Button from "../components/Button";
-import StatusPill from "../components/StatusPill";
 
 const overdueReturns = [
   { tag: "AF-0114", asset: "Dell Latitude 5420", holder: "Priya Shah", days: 3 },
@@ -22,7 +21,7 @@ const activity = [
   { time: "13:45:00", user: "Dept Head", action: "approved", detail: "Transfer AF-0201 approved" },
 ];
 
-export default function Dashboard() {
+export default function Dashboard({ onNavigate }: { onNavigate: (screen: string) => void }) {
   return (
     <div className="space-y-4">
       {/* KPI row */}
@@ -105,13 +104,13 @@ export default function Dashboard() {
         <div className="lg:col-span-4">
           <div className="bg-surface border border-border rounded-md p-4 space-y-3">
             <h2 className="text-sm font-semibold text-text mb-1">Quick Actions</h2>
-            <Button variant="primary" className="w-full flex items-center justify-center gap-2">
+            <Button variant="primary" className="w-full flex items-center justify-center gap-2" onClick={() => onNavigate("assets")}>
               <Package size={16} /> Register Asset
             </Button>
-            <Button variant="outline" className="w-full flex items-center justify-center gap-2">
+            <Button variant="outline" className="w-full flex items-center justify-center gap-2" onClick={() => onNavigate("bookings")}>
               <CalendarClock size={16} /> Book Resource
             </Button>
-            <Button variant="outline" className="w-full flex items-center justify-center gap-2">
+            <Button variant="outline" className="w-full flex items-center justify-center gap-2" onClick={() => onNavigate("maintenance")}>
               <Wrench size={16} /> Raise Maintenance Request
             </Button>
           </div>

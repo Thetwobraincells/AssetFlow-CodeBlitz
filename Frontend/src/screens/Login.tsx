@@ -152,7 +152,7 @@ export default function Login({ onLoginSuccess }: { onLoginSuccess: () => void }
 
             {error && <p className="text-xs text-red">{error}</p>}
 
-            <Button variant="primary" className="w-full">
+            <Button variant="primary" type="submit" className="w-full">
               {mode === "login" ? "Log in" : "Create account"}
             </Button>
           </form>

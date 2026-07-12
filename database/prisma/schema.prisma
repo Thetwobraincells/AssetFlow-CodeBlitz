@@ -11,3 +11,53 @@ generator client {
 datasource db {
   provider = "postgresql"
 }
+
+enum UserRole {
+  admin
+  asset_manager
+  department_head
+  employee
+}
+
+enum UserStatus {
+  active
+  inactive
+}
+
+model User {
+  id           String     @id @default(uuid())
+  name         String     @db.VarChar(120)
+  email        String     @unique @db.VarChar(160)
+  passwordHash String     @map("password_hash")
+  role         UserRole   @default(employee)
+  departmentId String?    @map("department_id")
+  status       UserStatus @default(active)
+  createdAt    DateTime   @default(now()) @map("created_at")
+  updatedAt    DateTime   @updatedAt @map("updated_at")
+
+  department Department? @relation("DepartmentUsers", fields: [departmentId], references: [id])
+
+  @@map("users")
+}
+
+enum DepartmentStatus {
+  active
+  inactive
+}
+
+model Department {
+  id                 String           @id @default(uuid())
+  name               String           @unique @db.VarChar(120)
+  code               String           @unique @db.VarChar(20)
+  headUserId         String?          @map("head_user_id")
+  parentDepartmentId String?          @map("parent_department_id")
+  status             DepartmentStatus @default(active)
+  createdAt          DateTime         @default(now()) @map("created_at")
+  updatedAt          DateTime         @updatedAt @map("updated_at")
+
+  users            User[]       @relation("DepartmentUsers")
+  parentDepartment Department?  @relation("DepartmentHierarchy", fields: [parentDepartmentId], references: [id])
+  childDepartments Department[] @relation("DepartmentHierarchy")
+
+  @@map("departments")
+}

@@ -1,92 +1,31 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { ArrowLeft, Pencil, Wrench, AlertTriangle, Archive } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
 import StatusPill from "../components/StatusPill";
 import Modal from "../components/Modal";
 import Button from "../components/Button";
 import RaiseMaintenanceModal, { type MaintenanceRequest } from "../components/RaiseMaintenanceModal";
 import { useToast } from "../components/Toast";
-
-/* ------------------------------------------------------------------ */
-/* Types & mock per-tag data                                             */
-/* ------------------------------------------------------------------ */
+import { apiRequest } from "../lib/api";
+import { useSafeMutation } from "../hooks/useSafeMutation";
 
 const tabs = ["Details", "Allocation History", "Maintenance History"] as const;
 
 type AssetStatus = "available" | "allocated" | "maintenance" | "retired" | "lost";
 
-interface AssetData {
-  name: string;
-  category: string;
-  serial: string;
-  acquired: string;
-  cost: string;
-  condition: string;
-  location: string;
-  department: string;
-  status: AssetStatus;
-}
-
-const assetDB: Record<string, AssetData> = {
-  "AF-0001": {
-    name: "Dell Latitude 5420", category: "Electronics", serial: "SN-88213X",
-    acquired: "12 Jan 2025", cost: "₹78,000", condition: "Good",
-    location: "Mumbai HQ - 4F", department: "Engineering", status: "allocated",
-  },
-  "AF-0002": {
-    name: "Herman Miller Aeron", category: "Furniture", serial: "SN-44012A",
-    acquired: "05 Mar 2024", cost: "₹1,20,000", condition: "Excellent",
-    location: "Mumbai HQ - 2F", department: "—", status: "available",
-  },
-  "AF-0003": {
-    name: "Toyota Innova - MH01AB1234", category: "Vehicles", serial: "VH-33092",
-    acquired: "20 Jun 2023", cost: "₹14,50,000", condition: "Good",
-    location: "Parking Bay 2", department: "Logistics", status: "allocated",
-  },
-  "AF-0004": {
-    name: "Epson EB-X05 Projector", category: "Electronics", serial: "SN-99001B",
-    acquired: "18 Nov 2024", cost: "₹38,500", condition: "Fair",
-    location: "Conference Room B2", department: "—", status: "maintenance",
-  },
-  "AF-0005": {
-    name: "HP LaserJet Pro M404", category: "Electronics", serial: "SN-77412C",
-    acquired: "02 Aug 2024", cost: "₹22,000", condition: "Good",
-    location: "Mumbai HQ - 3F", department: "Admin", status: "available",
-  },
-};
-
-const fallbackAsset: AssetData = {
-  name: "Unknown Asset", category: "—", serial: "—",
-  acquired: "—", cost: "—", condition: "—",
-  location: "—", department: "—", status: "available",
-};
-
-const allocationHistory = [
-  { date: "2026-06-01", event: "Allocated to Priya Shah",    by: "Asset Manager" },
-  { date: "2026-03-14", event: "Returned by Raj Mehta",      by: "Raj Mehta" },
-  { date: "2025-11-02", event: "Allocated to Raj Mehta",     by: "Asset Manager" },
-];
-
-const maintenanceHistory = [
-  { date: "2026-05-10", event: "Resolved — screen replacement", by: "TECH-42" },
-  { date: "2026-05-02", event: "Raised — display flickering",   by: "Priya Shah" },
-];
-
-/* ------------------------------------------------------------------ */
-/* Sub-components                                                        */
-/* ------------------------------------------------------------------ */
-
-const conditions = ["Excellent", "Good", "Fair", "Poor"];
-
 function DetailRow({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
   return (
     <div>
       <p className="label-caps text-text-muted mb-1">{label}</p>
-      <p className={`text-sm text-text ${mono ? "font-mono" : ""}`}>{value}</p>
+      <p className={`text-sm text-text ${mono ? "font-mono" : ""}`}>{value || "—"}</p>
     </div>
   );
 }
 
 function HistoryTimeline({ items }: { items: { date: string; event: string; by: string }[] }) {
+  if (!items || items.length === 0) {
+    return <div className="p-4 text-center text-sm text-text-muted border border-border rounded-md">No history available.</div>;
+  }
   return (
     <div className="bg-surface border border-border rounded-md p-5">
       <div className="space-y-4">
@@ -94,7 +33,7 @@ function HistoryTimeline({ items }: { items: { date: string; event: string; by: 
           <div key={i} className="flex gap-4 relative pl-4 border-l border-border">
             <div className="absolute left-[-4.5px] top-1 w-2 h-2 rounded-full bg-amber" />
             <div>
-              <p className="font-mono text-xs text-text-muted">{item.date}</p>
+              <p className="font-mono text-xs text-text-muted">{new Date(item.date).toLocaleDateString()}</p>
               <p className="text-sm text-text">{item.event}</p>
               <p className="text-xs text-text-muted">by {item.by}</p>
             </div>
@@ -105,49 +44,106 @@ function HistoryTimeline({ items }: { items: { date: string; event: string; by: 
   );
 }
 
-/* ------------------------------------------------------------------ */
-/* Screen                                                                */
-/* ------------------------------------------------------------------ */
+const conditions = ["excellent", "good", "fair", "poor"];
 
-export default function AssetDetail({ tag, onBack }: { tag: string; onBack: () => void }) {
-  const initial   = assetDB[tag] ?? fallbackAsset;
-  const [asset, setAsset]               = useState<AssetData>(initial);
-  const [assetStatus, setAssetStatus]   = useState<AssetStatus>(initial.status);
-  const [activeTab, setActiveTab]       = useState<typeof tabs[number]>("Details");
-  const [showEdit, setShowEdit]         = useState(false);
-  const [showMaint, setShowMaint]       = useState(false);
+export default function AssetDetail({ id, onBack }: { id: string; onBack: () => void }) {
+  const { data: response, isLoading } = useQuery({
+    queryKey: ['asset', id],
+    queryFn: () => apiRequest(`/assets/${id}`)
+  });
+  
+  const asset = response?.data;
+  const [activeTab, setActiveTab] = useState<typeof tabs[number]>("Details");
+  const [showEdit, setShowEdit] = useState(false);
+  const [showMaint, setShowMaint] = useState(false);
   const [showRetireConfirm, setShowRetireConfirm] = useState(false);
-  const { show, ToastOutlet }           = useToast();
+  const { show, ToastOutlet } = useToast();
 
-  /* Edit form local state */
-  const [editForm, setEditForm] = useState({ ...asset });
+  const [editForm, setEditForm] = useState<any>({});
+
+  useEffect(() => {
+    if (asset) {
+      setEditForm({ ...asset });
+    }
+  }, [asset]);
+
+  const updateAsset = useSafeMutation(
+    ['asset', id],
+    (payload: any) => apiRequest(`/assets/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload)
+    })
+  );
 
   function saveEdit() {
-    setAsset(editForm);
-    show("Asset details updated.", "success");
-    setShowEdit(false);
+    updateAsset.mutate({
+      name: editForm.name,
+      condition: editForm.condition,
+      location: editForm.location,
+      status: editForm.status
+    }, {
+      onSuccess: () => {
+        show("Asset details updated.", "success");
+        setShowEdit(false);
+      },
+      onError: (err: any) => {
+        show(err.message || "Failed to update asset.", "error");
+      }
+    });
   }
 
   function saveMaint(req: MaintenanceRequest) {
-    setAssetStatus("maintenance");
-    show(`Maintenance request ${req.id} submitted.`);
-    setShowMaint(false);
+    updateAsset.mutate({ status: "maintenance" }, {
+      onSuccess: () => {
+        show(`Maintenance request ${req.id} submitted.`);
+        setShowMaint(false);
+      },
+      onError: (err: any) => {
+        show(err.message || "Failed to submit request.", "error");
+      }
+    });
   }
 
   function retireAsset() {
-    setAssetStatus("retired");
-    show("Asset marked as retired.", "info");
-    setShowRetireConfirm(false);
+    updateAsset.mutate({ status: "retired" }, {
+      onSuccess: () => {
+        show("Asset marked as retired.", "info");
+        setShowRetireConfirm(false);
+      },
+      onError: (err: any) => {
+        show(err.message || "Failed to retire asset.", "error");
+      }
+    });
   }
 
   function toggleLost() {
-    const next = assetStatus === "lost" ? "available" : "lost";
-    setAssetStatus(next);
-    show(next === "lost" ? "Asset reported as lost." : "Asset marked as found / available.", "info");
+    const next = asset?.status === "lost" ? "available" : "lost";
+    updateAsset.mutate({ status: next }, {
+      onSuccess: () => {
+        show(next === "lost" ? "Asset reported as lost." : "Asset marked as found / available.", "info");
+      },
+      onError: (err: any) => {
+        show(err.message || "Failed to update status.", "error");
+      }
+    });
   }
 
-  const inputCls =
-    "w-full bg-bg border border-border rounded-md px-3 py-2 text-sm text-text focus:outline-none focus:ring-1 focus:ring-amber/60 placeholder:text-text-muted";
+  const inputCls = "w-full bg-bg border border-border rounded-md px-3 py-2 text-sm text-text focus:outline-none focus:ring-1 focus:ring-amber/60 placeholder:text-text-muted";
+
+  if (isLoading) {
+    return <div className="p-8 text-center text-text-muted">Loading...</div>;
+  }
+  
+  if (!asset) {
+    return (
+      <div className="space-y-4">
+        <button onClick={onBack} className="flex items-center gap-1.5 text-sm text-text-muted hover:text-text transition-colors">
+          <ArrowLeft size={14} /> Back to Asset Directory
+        </button>
+        <div className="p-8 text-center text-text-muted">Asset not found.</div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-4">
@@ -158,8 +154,8 @@ export default function AssetDetail({ tag, onBack }: { tag: string; onBack: () =
       {/* Header row */}
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div className="flex items-center gap-3">
-          <span className="font-mono text-lg text-amber">{tag}</span>
-          <StatusPill status={assetStatus} label={assetStatus} />
+          <span className="font-mono text-lg text-amber">{asset.asset_tag}</span>
+          <StatusPill status={asset.status} label={asset.status.replace(/_/g, " ")} />
         </div>
         {/* Action buttons */}
         <div className="flex items-center gap-2">
@@ -171,12 +167,12 @@ export default function AssetDetail({ tag, onBack }: { tag: string; onBack: () =
           </Button>
           <Button
             variant="ghost"
-            className={`flex items-center gap-1.5 text-xs ${assetStatus === "lost" ? "text-teal" : "text-orange"}`}
+            className={`flex items-center gap-1.5 text-xs ${asset.status === "lost" ? "text-teal" : "text-orange"}`}
             onClick={toggleLost}
           >
-            <AlertTriangle size={13} /> {assetStatus === "lost" ? "Mark Found" : "Report Lost"}
+            <AlertTriangle size={13} /> {asset.status === "lost" ? "Mark Found" : "Report Lost"}
           </Button>
-          {assetStatus !== "retired" && (
+          {asset.status !== "retired" && (
             <Button
               variant="ghost"
               className="flex items-center gap-1.5 text-xs text-red hover:text-red"
@@ -206,22 +202,30 @@ export default function AssetDetail({ tag, onBack }: { tag: string; onBack: () =
       {activeTab === "Details" && (
         <div className="grid grid-cols-2 gap-4 bg-surface border border-border rounded-md p-5">
           <DetailRow label="Name"            value={asset.name} />
-          <DetailRow label="Category"        value={asset.category} />
-          <DetailRow label="Serial Number"   value={asset.serial}   mono />
-          <DetailRow label="Acquisition Date" value={asset.acquired} />
-          <DetailRow label="Acquisition Cost" value={asset.cost}    mono />
+          <DetailRow label="Category"        value={asset.category?.name || "—"} />
+          <DetailRow label="Serial Number"   value={asset.serial_number}   mono />
+          <DetailRow label="Acquisition Date" value={asset.acquisition_date ? new Date(asset.acquisition_date).toLocaleDateString() : "—"} />
+          <DetailRow label="Acquisition Cost" value={asset.acquisition_cost ? `₹${asset.acquisition_cost}` : "—"}    mono />
           <DetailRow label="Condition"       value={asset.condition} />
           <DetailRow label="Location"        value={asset.location} />
-          <DetailRow label="Department"      value={asset.department} />
+          <DetailRow label="Department"      value={asset.department?.name || "—"} />
         </div>
       )}
 
       {activeTab === "Allocation History" && (
-        <HistoryTimeline items={allocationHistory} />
+        <HistoryTimeline items={asset.Allocation?.map((alloc: any) => ({
+          date: alloc.created_at,
+          event: `Allocated to ${alloc.user?.name || "Unknown"}`,
+          by: "System"
+        })) || []} />
       )}
 
       {activeTab === "Maintenance History" && (
-        <HistoryTimeline items={maintenanceHistory} />
+        <HistoryTimeline items={asset.MaintenanceRecord?.map((maint: any) => ({
+          date: maint.scheduled_date || maint.created_at,
+          event: `${maint.status} - ${maint.issue_description}`,
+          by: maint.assigned_to_user?.name || "Unassigned"
+        })) || []} />
       )}
 
       {/* ---- Edit Modal ---- */}
@@ -231,21 +235,13 @@ export default function AssetDetail({ tag, onBack }: { tag: string; onBack: () =
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="label-caps text-text-muted block mb-1.5">Name</label>
-                <input value={editForm.name} onChange={(e) => setEditForm({ ...editForm, name: e.target.value })} className={inputCls} />
-              </div>
-              <div>
-                <label className="label-caps text-text-muted block mb-1.5">Category</label>
-                <input value={editForm.category} onChange={(e) => setEditForm({ ...editForm, category: e.target.value })} className={inputCls} />
+                <input value={editForm.name || ""} onChange={(e) => setEditForm({ ...editForm, name: e.target.value })} className={inputCls} />
               </div>
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="label-caps text-text-muted block mb-1.5">Location</label>
-                <input value={editForm.location} onChange={(e) => setEditForm({ ...editForm, location: e.target.value })} className={inputCls} />
-              </div>
-              <div>
-                <label className="label-caps text-text-muted block mb-1.5">Department</label>
-                <input value={editForm.department} onChange={(e) => setEditForm({ ...editForm, department: e.target.value })} className={inputCls} />
+                <input value={editForm.location || ""} onChange={(e) => setEditForm({ ...editForm, location: e.target.value })} className={inputCls} />
               </div>
             </div>
             <div>
@@ -256,7 +252,7 @@ export default function AssetDetail({ tag, onBack }: { tag: string; onBack: () =
                     key={c}
                     type="button"
                     onClick={() => setEditForm({ ...editForm, condition: c })}
-                    className={`px-3 py-1.5 rounded-md text-xs border transition-colors ${
+                    className={`px-3 py-1.5 rounded-md text-xs border capitalize transition-colors ${
                       editForm.condition === c
                         ? "bg-amber/10 border-amber text-amber"
                         : "border-border text-text-muted hover:text-text"
@@ -269,7 +265,9 @@ export default function AssetDetail({ tag, onBack }: { tag: string; onBack: () =
             </div>
             <div className="flex justify-end gap-2 pt-2">
               <Button variant="ghost" onClick={() => setShowEdit(false)}>Cancel</Button>
-              <Button variant="primary" onClick={saveEdit}>Save Changes</Button>
+              <Button variant="primary" onClick={saveEdit} disabled={updateAsset.isPending}>
+                {updateAsset.isPending ? "Saving..." : "Save Changes"}
+              </Button>
             </div>
           </div>
         </Modal>
@@ -280,13 +278,13 @@ export default function AssetDetail({ tag, onBack }: { tag: string; onBack: () =
         <Modal title="Retire Asset" onClose={() => setShowRetireConfirm(false)}>
           <div className="space-y-4">
             <p className="text-sm text-text-muted">
-              Are you sure you want to retire <span className="text-text font-medium">{tag}</span>?
+              Are you sure you want to retire <span className="text-text font-medium">{asset.asset_tag}</span>?
               This will remove it from active inventory. This action cannot be undone.
             </p>
             <div className="flex justify-end gap-2">
               <Button variant="ghost" onClick={() => setShowRetireConfirm(false)}>Cancel</Button>
-              <Button variant="outline" className="!border-red/40 !text-red hover:!bg-red/10" onClick={retireAsset}>
-                Confirm Retire
+              <Button variant="outline" className="!border-red/40 !text-red hover:!bg-red/10" onClick={retireAsset} disabled={updateAsset.isPending}>
+                {updateAsset.isPending ? "Retiring..." : "Confirm Retire"}
               </Button>
             </div>
           </div>
@@ -296,7 +294,7 @@ export default function AssetDetail({ tag, onBack }: { tag: string; onBack: () =
       {/* ---- Maintenance Modal ---- */}
       {showMaint && (
         <RaiseMaintenanceModal
-          prefilledTag={tag}
+          prefilledTag={asset.asset_tag}
           prefilledAsset={asset.name}
           onClose={() => setShowMaint(false)}
           onSave={saveMaint}

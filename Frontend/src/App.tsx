@@ -15,19 +15,19 @@ import Login from "./screens/Login";
 function App() {
   const [isLoggedIn, setIsLoggedIn]     = useState(false);
   const [activeScreen, setActiveScreen] = useState("dashboard");
-  const [detailTag, setDetailTag]       = useState<string | null>(null);
+  const [detailId, setDetailId]       = useState<string | null>(null);
 
   if (!isLoggedIn) {
     return <Login onLoginSuccess={() => setIsLoggedIn(true)} />;
   }
 
-  function openDetail(tag: string) {
-    setDetailTag(tag);
+  function openDetail(id: string) {
+    setDetailId(id);
     setActiveScreen("asset-detail");
   }
 
   function closeDetail() {
-    setDetailTag(null);
+    setDetailId(null);
     setActiveScreen("assets");
   }
 
@@ -36,7 +36,7 @@ function App() {
       case "assets":
         return <AssetDirectory onOpenDetail={openDetail} />;
       case "asset-detail":
-        return detailTag ? <AssetDetail tag={detailTag} onBack={closeDetail} /> : <AssetDirectory onOpenDetail={openDetail} />;
+        return detailId ? <AssetDetail id={detailId} onBack={closeDetail} /> : <AssetDirectory onOpenDetail={openDetail} />;
       case "allocations":   return <Allocations />;
       case "bookings":      return <Bookings />;
       case "maintenance":   return <Maintenance />;
@@ -52,7 +52,7 @@ function App() {
 
   function handleNavSelect(screen: string) {
     // Clear detail context when navigating away
-    if (screen !== "asset-detail") setDetailTag(null);
+    if (screen !== "asset-detail") setDetailId(null);
     setActiveScreen(screen);
   }
 

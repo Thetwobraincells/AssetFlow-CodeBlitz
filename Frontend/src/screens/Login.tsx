@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Package, Laptop, Car, DoorOpen } from "lucide-react";
 import Button from "../components/Button";
+import { apiRequest } from "../lib/api";
 
 const DEMO_EMAIL = "admin@assetflow.io";
 const DEMO_PASSWORD = "demo1234";
@@ -15,27 +16,41 @@ export default function Login({ onLoginSuccess }: { onLoginSuccess: () => void }
   const [name, setName] = useState("");
   const [error, setError] = useState("");
 
-  function handleLogin(e: React.FormEvent) {
+  async function handleLogin(e: React.FormEvent) {
     e.preventDefault();
-    // Dummy auth check — no backend wired yet.
-    // Swap this block for a real API call once auth endpoint exists.
-    if (email === DEMO_EMAIL && password === DEMO_PASSWORD) {
+    try {
+      const responseData = await apiRequest('/auth/login', {
+        method: 'POST',
+        body: JSON.stringify({ email, password })
+      });
+      localStorage.setItem('token', responseData.data.token);
+      localStorage.setItem('user', JSON.stringify(responseData.data.user));
       setError("");
       onLoginSuccess();
-    } else {
-      setError("Invalid credentials. Try the demo account below.");
+    } catch (err: any) {
+      setError(err.message || "Invalid credentials.");
     }
   }
 
-  function handleSignup(e: React.FormEvent) {
+  async function handleSignup(e: React.FormEvent) {
     e.preventDefault();
     if (password !== confirmPassword) {
       setError("Passwords don't match.");
       return;
     }
-    // Dummy signup — always creates an Employee account, no role field exists.
-    setError("");
-    onLoginSuccess();
+    
+    try {
+      const responseData = await apiRequest('/auth/signup', {
+        method: 'POST',
+        body: JSON.stringify({ name, email, password })
+      });
+      localStorage.setItem('token', responseData.data.token);
+      localStorage.setItem('user', JSON.stringify(responseData.data.user));
+      setError("");
+      onLoginSuccess();
+    } catch (err: any) {
+      setError(err.message || "Failed to create account.");
+    }
   }
 
   function fillDemoCreds() {

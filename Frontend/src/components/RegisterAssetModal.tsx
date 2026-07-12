@@ -1,50 +1,58 @@
 import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { useSafeMutation } from "../hooks/useSafeMutation";
+import { apiRequest } from "../lib/api";
 import Modal from "./Modal";
 import Button from "./Button";
 import { useToast } from "./Toast";
 
 const conditions = ["Excellent", "Good", "Fair", "Poor"];
-const categoryOptions = ["Electronics", "Furniture", "Vehicles"];
-
-interface NewAsset {
-  tag: string;
-  name: string;
-  category: string;
-  status: "available";
-  location: string;
-  department: string;
-}
 
 export default function RegisterAssetModal({
   onClose,
-  onRegister,
-  nextTag = "AF-0008 (auto-generated)",
 }: {
   onClose: () => void;
-  onRegister?: (asset: NewAsset) => void;
-  nextTag?: string;
 }) {
   const [condition, setCondition] = useState("Excellent");
   const [bookable, setBookable] = useState(false);
   const [name, setName] = useState("");
-  const [category, setCategory] = useState(categoryOptions[0]);
+  const [category, setCategory] = useState("");
   const [location, setLocation] = useState("");
+  const [serialNumber, setSerialNumber] = useState("");
+  const [acquisitionDate, setAcquisitionDate] = useState("");
+  const [acquisitionCost, setAcquisitionCost] = useState("");
   const { show, ToastOutlet } = useToast();
+
+  const { data: catResponse } = useQuery({
+    queryKey: ['categories'],
+    queryFn: () => apiRequest('/categories')
+  });
+  const categories = catResponse?.data || [];
+
+  const registerMutation = useSafeMutation(
+    ['assets'],
+    (newAsset: any) => apiRequest('/assets', { method: 'POST', body: JSON.stringify(newAsset) })
+  );
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (onRegister) {
-      onRegister({
-        tag: nextTag.replace(" (auto-generated)", ""),
-        name: name || "Unnamed Asset",
-        category,
-        status: "available",
-        location: location || "—",
-        department: "—",
-      });
-    }
-    show("Asset registered successfully.", "success");
-    onClose();
+    if (!category && categories.length > 0) return show("Please select a category", "error");
+
+    registerMutation.mutate({
+      name,
+      category_id: category || categories[0]?.id,
+      location,
+      condition: condition.toLowerCase(),
+      is_bookable: bookable,
+      serial_number: serialNumber,
+      acquisition_date: acquisitionDate ? new Date(acquisitionDate).toISOString() : new Date().toISOString(),
+      acquisition_cost: Number(acquisitionCost) || 0
+    }, {
+      onSuccess: () => {
+        show("Asset registered successfully.", "success");
+        onClose();
+      }
+    });
   }
 
   return (
@@ -68,7 +76,7 @@ export default function RegisterAssetModal({
               onChange={(e) => setCategory(e.target.value)}
               className="w-full bg-bg border border-border rounded-md px-3 py-2 text-sm text-text focus:outline-none"
             >
-              {categoryOptions.map((c) => <option key={c}>{c}</option>)}
+              {categories.map((c: any) => <option key={c.id} value={c.id}>{c.name}</option>)}
             </select>
           </div>
         </div>
@@ -78,13 +86,15 @@ export default function RegisterAssetModal({
             <label className="label-caps text-text-muted block mb-1.5">Asset Tag</label>
             <input
               disabled
-              value={nextTag}
+              value="Auto-generated"
               className="w-full bg-surface-high border border-border rounded-md px-3 py-2 text-sm font-mono text-text-muted"
             />
           </div>
           <div>
             <label className="label-caps text-text-muted block mb-1.5">Serial Number</label>
             <input
+              value={serialNumber}
+              onChange={(e) => setSerialNumber(e.target.value)}
               placeholder="SN-88213X"
               className="w-full bg-bg border border-border rounded-md px-3 py-2 text-sm font-mono text-text focus:outline-none focus:ring-1 focus:ring-amber"
             />
@@ -96,6 +106,8 @@ export default function RegisterAssetModal({
             <label className="label-caps text-text-muted block mb-1.5">Acquisition Date</label>
             <input
               type="date"
+              value={acquisitionDate}
+              onChange={(e) => setAcquisitionDate(e.target.value)}
               className="w-full bg-bg border border-border rounded-md px-3 py-2 text-sm text-text focus:outline-none focus:ring-1 focus:ring-amber"
             />
           </div>
@@ -103,6 +115,8 @@ export default function RegisterAssetModal({
             <label className="label-caps text-text-muted block mb-1.5">Acquisition Cost (₹)</label>
             <input
               type="number"
+              value={acquisitionCost}
+              onChange={(e) => setAcquisitionCost(e.target.value)}
               placeholder="45000"
               className="w-full bg-bg border border-border rounded-md px-3 py-2 text-sm font-mono text-text focus:outline-none focus:ring-1 focus:ring-amber"
             />
@@ -154,8 +168,10 @@ export default function RegisterAssetModal({
         </label>
 
         <div className="flex justify-end gap-2 pt-2">
-          <Button variant="ghost" onClick={onClose}>Cancel</Button>
-          <Button variant="primary" type="submit">Register Asset</Button>
+          <Button variant="ghost" type="button" onClick={onClose}>Cancel</Button>
+          <Button variant="primary" type="submit" disabled={registerMutation.isPending}>
+            {registerMutation.isPending ? "Registering..." : "Register Asset"}
+          </Button>
         </div>
       </form>
       {ToastOutlet}

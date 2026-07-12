@@ -1,4 +1,4 @@
-import { Search, Bell } from "lucide-react";
+import { Search, Bell, LogOut } from "lucide-react";
 
 const roleColors: Record<string, string> = {
   Admin: "bg-amber/10 text-amber border-amber/30",
@@ -11,10 +11,12 @@ export default function Topbar({
   title,
   role = "Employee",
   userName = "Shivam",
+  onLogout,
 }: {
   title: string;
   role?: string;
   userName?: string;
+  onLogout?: () => void;
 }) {
   return (
     <header className="h-16 border-b border-border bg-bg flex items-center justify-between px-6 shrink-0">
@@ -38,6 +40,13 @@ export default function Topbar({
         <div className="w-8 h-8 rounded-full bg-surface-hover flex items-center justify-center text-xs font-medium">
           {userName[0]}
         </div>
+        <button
+          onClick={onLogout}
+          className="text-text-muted hover:text-red transition-colors"
+          title="Log out"
+        >
+          <LogOut size={18} strokeWidth={1.5} />
+        </button>
       </div>
     </header>
   );

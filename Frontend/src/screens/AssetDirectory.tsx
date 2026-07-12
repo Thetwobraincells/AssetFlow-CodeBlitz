@@ -1,5 +1,7 @@
 import { useState } from "react";
 import { Search, Plus, Package } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
+import { apiRequest } from "../lib/api";
 import StatusPill from "../components/StatusPill";
 import Button from "../components/Button";
 import RegisterAssetModal from "../components/RegisterAssetModal";
@@ -15,39 +17,33 @@ interface Asset {
   department: string;
 }
 
-const initialAssets: Asset[] = [
-  { tag: "AF-0001", name: "Dell Latitude 5420", category: "Electronics", status: "allocated", location: "Mumbai HQ - 4F", department: "Engineering" },
-  { tag: "AF-0002", name: "Herman Miller Aeron", category: "Furniture", status: "available", location: "Mumbai HQ - 2F", department: "—" },
-  { tag: "AF-0003", name: "Toyota Innova - MH01AB1234", category: "Vehicles", status: "reserved", location: "Parking Bay 2", department: "Logistics" },
-  { tag: "AF-0004", name: "Epson EB-X05 Projector", category: "Electronics", status: "maintenance", location: "Conference Room B2", department: "—" },
-  { tag: "AF-0005", name: "HP LaserJet Pro M404", category: "Electronics", status: "available", location: "Mumbai HQ - 3F", department: "Admin" },
-  { tag: "AF-0006", name: "Standing Desk - Adj.", category: "Furniture", status: "lost", location: "Unknown", department: "Design" },
-  { tag: "AF-0007", name: "Server Rack Unit 02", category: "Electronics", status: "retired", location: "Server Room", department: "IT" },
-];
+export default function AssetDirectory({ onOpenDetail }: { onOpenDetail: (id: string) => void }) {
+  const { data: response, isLoading } = useQuery({
+    queryKey: ['assets'],
+    queryFn: () => apiRequest('/assets')
+  });
+  const assets = response?.data || [];
 
-const categories = ["All", "Electronics", "Furniture", "Vehicles"];
-const statuses = ["All", "available", "allocated", "reserved", "maintenance", "lost", "retired", "disposed"];
-
-export default function AssetDirectory({ onOpenDetail }: { onOpenDetail: (tag: string) => void }) {
-  const [assets, setAssets] = useState<Asset[]>(initialAssets);
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState("All");
   const [status, setStatus] = useState("All");
   const [showRegister, setShowRegister] = useState(false);
 
-  function handleRegister(newAsset: Asset) {
-    setAssets((prev) => [newAsset, ...prev]);
-    setShowRegister(false);
-  }
+  const categories = ["All", ...new Set(assets.map((a: any) => a.category?.name).filter(Boolean)) as string[]];
+  const statuses = ["All", "available", "allocated", "reserved", "under_maintenance", "lost", "retired", "disposed"];
 
-  const filtered = assets.filter((a) => {
+  const filtered = assets.filter((a: any) => {
     const matchesSearch =
-      a.tag.toLowerCase().includes(search.toLowerCase()) ||
+      a.asset_tag.toLowerCase().includes(search.toLowerCase()) ||
       a.name.toLowerCase().includes(search.toLowerCase());
-    const matchesCategory = category === "All" || a.category === category;
+    const matchesCategory = category === "All" || a.category?.name === category;
     const matchesStatus = status === "All" || a.status === status;
     return matchesSearch && matchesCategory && matchesStatus;
   });
+
+  if (isLoading) {
+    return <div className="p-8 text-center text-text-muted">Loading assets...</div>;
+  }
 
   return (
     <div className="space-y-4">
@@ -102,25 +98,25 @@ export default function AssetDirectory({ onOpenDetail }: { onOpenDetail: (tag: s
             </tr>
           </thead>
           <tbody>
-            {filtered.map((a) => (
+            {filtered.map((a: any) => (
               <tr
-                key={a.tag}
-                onClick={() => onOpenDetail(a.tag)}
+                key={a.asset_tag}
+                onClick={() => onOpenDetail(a.id)}
                 className="border-b border-border/50 last:border-0 hover:bg-surface-hover cursor-pointer transition-colors"
               >
                 <td className="py-3 px-4">
-                  <span className="font-mono text-sm text-amber">{a.tag}</span>
+                  <span className="font-mono text-sm text-amber">{a.asset_tag}</span>
                 </td>
                 <td className="py-3 px-4 text-sm text-text flex items-center gap-2">
                   <Package size={14} className="text-text-muted" />
                   {a.name}
                 </td>
-                <td className="py-3 px-4 text-sm text-text-muted">{a.category}</td>
+                <td className="py-3 px-4 text-sm text-text-muted">{a.category?.name || "—"}</td>
                 <td className="py-3 px-4">
-                  <StatusPill status={a.status} label={a.status.replace(/^\w/, (c) => c.toUpperCase())} />
+                  <StatusPill status={a.status} label={a.status.replace(/_/g, " ").replace(/^\w/, (c: string) => c.toUpperCase())} />
                 </td>
                 <td className="py-3 px-4 text-sm text-text-muted">{a.location}</td>
-                <td className="py-3 px-4 text-sm text-text-muted">{a.department}</td>
+                <td className="py-3 px-4 text-sm text-text-muted">{a.department?.name || "—"}</td>
               </tr>
             ))}
             {filtered.length === 0 && (
@@ -136,9 +132,7 @@ export default function AssetDirectory({ onOpenDetail }: { onOpenDetail: (tag: s
 
       {showRegister && (
         <RegisterAssetModal
-          nextTag={`AF-${String(assets.length + 1).padStart(4, "0")}`}
           onClose={() => setShowRegister(false)}
-          onRegister={handleRegister}
         />
       )}
     </div>

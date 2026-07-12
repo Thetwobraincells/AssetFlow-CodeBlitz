@@ -30,7 +30,7 @@ export default function AppShell({
     <div className="flex bg-bg min-h-screen">
       <Sidebar active={active} onSelect={onSelect} />
       <div className="flex-1 flex flex-col">
-        <Topbar title={titles[active]} onLogout={onLogout} />
+        <Topbar title={titles[active]} onLogout={onLogout} onBellClick={() => onSelect("notifications")} />
         <main className="flex-1 p-6 overflow-y-auto">{children}</main>
       </div>
     </div>

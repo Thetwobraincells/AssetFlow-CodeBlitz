@@ -63,3 +63,8 @@ This file is for tracking all database-related decisions, assumptions, and reaso
 - `idempotency_keys` table exists in schema, but the Express middleware that reads/writes it is a backend task, not a DB task — flagged for backend team.
 - Postgres RLS for tenant isolation — deferred, app-layer filtering used instead (see #9 above).
 - `Department.head_user_id` circular relation — now properly wired as a named relation (`"DepartmentHead"`) in the reconciled schema; earlier concern (decision #6, superseded) about circular-relation handling was resolved automatically by Prisma once both sides were defined together in one migration.
+
+### 13. Known Issue — Timestamp offset in seeded booking data
+- Observed: `bookings.start_time`/`end_time` seeded via `prisma.booking.create()` with UTC `Date` objects are landing ~5.5 hours off (IST offset) when inspected via raw SQL in pgAdmin.
+- Root cause not fully isolated — ruled out Node local-timezone (`process.env.TZ='UTC'` had no effect). Suspected Prisma 7 + `@prisma/adapter-pg` Date serialization quirk (very new stack).
+- Not fixed — deprioritized to keep moving; flagged for backend team since any `prisma.*.create()` call writing a timestamptz field (bookings, notifications, etc.) may be affected the same way. Worth a quick check once backend booking endpoints are live: create a booking via the real API and inspect the stored value the same way, before assuming it's seed-only.

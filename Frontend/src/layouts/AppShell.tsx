@@ -1,4 +1,4 @@
-import { ReactNode, useState } from "react";
+import { ReactNode } from "react";
 import Sidebar from "../components/Sidebar";
 import Topbar from "../components/Topbar";
 
@@ -17,16 +17,18 @@ const titles: Record<string, string> = {
 
 export default function AppShell({
   children,
+  active,
+  onSelect,
   onLogout,
 }: {
   children: ReactNode;
+  active: string;
+  onSelect: (key: string) => void;
   onLogout?: () => void;
 }) {
-  const [active, setActive] = useState("dashboard");
-
   return (
     <div className="flex bg-bg min-h-screen">
-      <Sidebar active={active} onSelect={setActive} />
+      <Sidebar active={active} onSelect={onSelect} />
       <div className="flex-1 flex flex-col">
         <Topbar title={titles[active]} onLogout={onLogout} />
         <main className="flex-1 p-6 overflow-y-auto">{children}</main>

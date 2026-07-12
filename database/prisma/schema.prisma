@@ -208,8 +208,8 @@ model Asset {
 }
 
 // ---------------------------------------------------------------------------
-// ALLOCATIONS  (§4.5 — one active allocation per asset, enforced via
-// partial unique index added in a follow-up raw-SQL migration, see §Step below)
+// ALLOCATIONS  (one active allocation per asset, enforced via
+// partial unique index added in a follow-up raw-SQL migration)
 // ---------------------------------------------------------------------------
 
 enum AllocationStatus {
@@ -280,8 +280,8 @@ model TransferRequest {
 }
 
 // ---------------------------------------------------------------------------
-// BOOKINGS  (§4.8 — overlap prevention via EXCLUDE constraint,
-// added in a follow-up raw-SQL migration, see §Step below)
+// BOOKINGS  (overlap prevention via EXCLUDE constraint,
+// added in a follow-up raw-SQL migration)
 // ---------------------------------------------------------------------------
 
 enum BookingStatus {

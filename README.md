@@ -146,8 +146,6 @@ The `database/` folder is Prisma's schema-as-code source of truth. It is a separ
 
 All API routes are versioned under `/api/v1`.
 
-> **Note on current integration state:** The Backend exposes a complete REST API (auth, organization setup, assets, allocations, bookings, maintenance, audits, notifications, reports) and the Frontend implements all 10 screens from the design spec. As of this build, the Frontend's `Login` screen manages an in-memory `isLoggedIn` flag and screens are not yet wired to call the Backend endpoints — wiring the Frontend to the live API (base URL, JWT storage, per-screen data fetching) is the next integration step. See [Roadmap](#roadmap).
-
 ## Data Model
 
 Defined in `database/prisma/schema.prisma`. All primary keys are UUIDs (`gen_random_uuid()`), every tenant-scoped table carries an `organization_id` foreign key, and uniqueness constraints are scoped per-organization (e.g. `[organization_id, email]`, `[organization_id, asset_tag]`).
@@ -271,7 +269,7 @@ cd ../database && npx prisma generate && cd ../Backend
 Start the API server:
 
 ```bash
-node src/server.js
+npm run dev
 ```
 
 You should see:
@@ -322,8 +320,6 @@ If that returns a JSON error response rather than a connection failure, the Back
 | `JWT_SECRET` | Secret used to sign/verify JWTs | **Yes** | — |
 
 Environment variables are validated at startup via a Zod schema (`Backend/src/config/env.js`) — the server refuses to start if `DATABASE_URL` or `JWT_SECRET` are missing.
-
-The Frontend currently has no `.env` requirements (no API base URL is wired in yet — see [Roadmap](#roadmap)).
 
 ## Seed Data / Demo Login
 

@@ -3,7 +3,7 @@ const { z } = require('zod');
 const allocateAssetSchema = z.object({
   body: z.object({
     asset_id: z.string().uuid("Invalid asset ID"),
-    user_id: z.string().uuid("Invalid user ID")
+    employee_id: z.string().uuid("Invalid employee ID")
   })
 });
 
@@ -12,7 +12,7 @@ const returnAssetSchema = z.object({
     id: z.string().uuid("Invalid allocation ID")
   }),
   body: z.object({
-    condition_notes: z.string().optional()
+    return_condition_notes: z.string().optional()
   })
 });
 

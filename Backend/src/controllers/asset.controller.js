@@ -3,14 +3,13 @@ const AssetService = require('../services/asset.service');
 class AssetController {
   static async createAsset(req, res, next) {
     try {
-      // If there's an image uploaded via Multer, save path
+      // If there's an image uploaded via Multer, save path as photo_url
       const data = { ...req.body };
       if (req.file) {
-        data.custom_attributes = data.custom_attributes || {};
-        data.custom_attributes.image_path = req.file.path;
+        data.photo_url = req.file.path;
       }
 
-      const asset = await AssetService.createAsset(req.tenantId, data);
+      const asset = await AssetService.createAsset(req.tenantId, data, req.userId);
       res.status(201).json({ message: 'Asset created successfully', data: asset });
     } catch (error) {
       next(error);
@@ -44,8 +43,7 @@ class AssetController {
     try {
       const data = { ...req.body };
       if (req.file) {
-        data.custom_attributes = data.custom_attributes || {};
-        data.custom_attributes.image_path = req.file.path;
+        data.photo_url = req.file.path;
       }
 
       const asset = await AssetService.updateAsset(req.tenantId, req.params.id, data);

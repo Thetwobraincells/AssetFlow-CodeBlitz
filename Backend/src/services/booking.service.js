@@ -25,10 +25,11 @@ class BookingService {
       const booking = await tx.booking.create({
         data: {
           asset_id: data.asset_id,
-          user_id: userId,
+          booked_by: userId,
           start_time: new Date(data.start_time),
           end_time: new Date(data.end_time),
-          purpose: data.purpose
+          department_id: data.department_id || null,
+          organization_id: tenantId
         }
       });
 
@@ -47,7 +48,7 @@ class BookingService {
     return prisma.booking.findMany({
       where: whereClause,
       include: {
-        user: { select: { id: true, name: true } },
+        owner: { select: { id: true, name: true } },
         asset: { select: { id: true, name: true, asset_tag: true } }
       },
       orderBy: { start_time: 'asc' }
@@ -64,12 +65,13 @@ class BookingService {
       throw new ApiError(404, 'NOT_FOUND', 'Booking not found');
     }
 
-    if (booking.user_id !== userId && userRole !== 'admin') {
+    if (booking.booked_by !== userId && userRole !== 'admin') {
       throw new ApiError(403, 'FORBIDDEN', 'Cannot cancel booking belonging to another user');
     }
 
-    return prisma.booking.delete({
-      where: { id: bookingId }
+    return prisma.booking.update({
+      where: { id: bookingId },
+      data: { status: 'cancelled' }
     });
   }
 }

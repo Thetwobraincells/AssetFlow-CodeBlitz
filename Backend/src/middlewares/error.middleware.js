@@ -2,7 +2,10 @@ const { ZodError } = require('zod');
 
 // eslint-disable-next-line no-unused-vars
 const errorMiddleware = (err, req, res, next) => {
-  console.error(err);
+  // Don't log errors in test environment to keep output clean
+  if (process.env.NODE_ENV !== 'test') {
+    console.error(err);
+  }
 
   // If it's our custom ApiError
   if (err.isApiError) {

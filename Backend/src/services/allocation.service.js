@@ -15,7 +15,7 @@ class AllocationService {
       }
 
       const user = await tx.user.findFirst({
-        where: { id: data.user_id, organization_id: tenantId, status: 'active' }
+        where: { id: data.employee_id, organization_id: tenantId, status: 'active' }
       });
 
       if (!user) throw new ApiError(404, 'NOT_FOUND', 'User not found or inactive');
@@ -23,8 +23,9 @@ class AllocationService {
       const allocation = await tx.allocation.create({
         data: {
           asset_id: data.asset_id,
-          user_id: data.user_id,
-          allocated_by: allocatedBy
+          employee_id: data.employee_id,
+          allocated_by: allocatedBy,
+          organization_id: tenantId
         }
       });
 
@@ -40,7 +41,7 @@ class AllocationService {
   static async returnAsset(tenantId, allocationId, data) {
     return prisma.$transaction(async (tx) => {
       const allocation = await tx.allocation.findFirst({
-        where: { id: allocationId, return_date: null },
+        where: { id: allocationId, status: 'active' },
         include: { asset: true }
       });
 
@@ -51,8 +52,9 @@ class AllocationService {
       const updatedAllocation = await tx.allocation.update({
         where: { id: allocationId },
         data: {
-          return_date: new Date(),
-          condition_notes: data.condition_notes
+          actual_return_date: new Date(),
+          return_condition_notes: data.return_condition_notes,
+          status: 'returned'
         }
       });
 
@@ -71,8 +73,8 @@ class AllocationService {
       const currentAllocation = await tx.allocation.findFirst({
         where: {
           asset_id: data.asset_id,
-          user_id: data.from_user_id,
-          return_date: null
+          employee_id: data.from_user_id,
+          status: 'active'
         },
         include: { asset: true }
       });
@@ -90,15 +92,20 @@ class AllocationService {
       // Return from current user
       await tx.allocation.update({
         where: { id: currentAllocation.id },
-        data: { return_date: new Date(), condition_notes: `Transferred to ${toUser.name}. Reason: ${data.reason || 'N/A'}` }
+        data: {
+          actual_return_date: new Date(),
+          return_condition_notes: `Transferred to ${toUser.name}. Reason: ${data.reason || 'N/A'}`,
+          status: 'returned'
+        }
       });
 
       // Allocate to new user
       const newAllocation = await tx.allocation.create({
         data: {
           asset_id: data.asset_id,
-          user_id: data.to_user_id,
-          allocated_by: transferredBy
+          employee_id: data.to_user_id,
+          allocated_by: transferredBy,
+          organization_id: tenantId
         }
       });
 

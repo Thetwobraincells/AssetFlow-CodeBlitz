@@ -4,7 +4,7 @@ const ApiError = require('../utils/ApiError');
 const prisma = new PrismaClient();
 
 class AssetService {
-  static async createAsset(tenantId, data) {
+  static async createAsset(tenantId, data, userId) {
     const asset_tag = await generateAssetTag(tenantId, data.category_id);
     
     return prisma.asset.create({
@@ -12,7 +12,8 @@ class AssetService {
         ...data,
         asset_tag,
         organization_id: tenantId,
-        status: 'available'
+        status: 'available',
+        created_by: userId || null
       }
     });
   }
@@ -37,8 +38,8 @@ class AssetService {
         category: true,
         department: true,
         allocations: {
-          where: { return_date: null },
-          include: { user: { select: { id: true, name: true, email: true } } }
+          where: { status: 'active' },
+          include: { employee: { select: { id: true, name: true, email: true } } }
         }
       }
     });

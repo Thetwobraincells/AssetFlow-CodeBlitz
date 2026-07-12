@@ -12,11 +12,13 @@ export default function Topbar({
   role = "Employee",
   userName = "Shivam",
   onLogout,
+  onBellClick,
 }: {
   title: string;
   role?: string;
   userName?: string;
   onLogout?: () => void;
+  onBellClick?: () => void;
 }) {
   return (
     <header className="h-16 border-b border-border bg-bg flex items-center justify-between px-6 shrink-0">
@@ -31,8 +33,9 @@ export default function Topbar({
       </div>
 
       <div className="flex items-center gap-4">
-        <button className="text-text-muted hover:text-text">
+        <button onClick={onBellClick} className="relative text-text-muted hover:text-text" title="Notifications">
           <Bell size={18} strokeWidth={1.5} />
+          <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-amber border border-bg" />
         </button>
         <span className={`text-xs px-2 py-1 rounded border font-mono ${roleColors[role]}`}>
           {role}

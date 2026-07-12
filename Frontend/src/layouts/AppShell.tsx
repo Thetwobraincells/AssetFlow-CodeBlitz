@@ -15,14 +15,20 @@ const titles: Record<string, string> = {
   logs: "Activity Logs",
 };
 
-export default function AppShell({ children }: { children: ReactNode }) {
+export default function AppShell({
+  children,
+  onLogout,
+}: {
+  children: ReactNode;
+  onLogout?: () => void;
+}) {
   const [active, setActive] = useState("dashboard");
 
   return (
     <div className="flex bg-bg min-h-screen">
       <Sidebar active={active} onSelect={setActive} />
       <div className="flex-1 flex flex-col">
-        <Topbar title={titles[active]} />
+        <Topbar title={titles[active]} onLogout={onLogout} />
         <main className="flex-1 p-6 overflow-y-auto">{children}</main>
       </div>
     </div>

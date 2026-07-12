@@ -1,0 +1,417 @@
+generator client {
+  provider = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
+}
+
+datasource db {
+  provider = "postgresql"
+  extensions = [btree_gist]
+}
+
+model Organization {
+  id                   String                @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name                 String                @db.VarChar(120)
+  slug                 String                @unique @db.VarChar(120)
+  logo_url             String?               @db.VarChar
+  primary_color        String?               @db.VarChar(20)
+  status               String                @default("active") @db.VarChar(20) // active, inactive
+  created_at           DateTime              @default(now())
+  
+  users                User[]
+  departments          Department[]
+  categories           AssetCategory[]
+  assets               Asset[]
+  allocations          Allocation[]
+  transferRequests     TransferRequest[]
+  bookings             Booking[]
+  maintenanceRequests  MaintenanceRequest[]
+  auditCycles          AuditCycle[]
+  notifications        Notification[]
+  activityLogs         ActivityLog[]
+  idempotencyKeys      IdempotencyKey[]
+}
+
+enum Role {
+  admin
+  asset_manager
+  department_head
+  employee
+}
+
+enum Status {
+  active
+  inactive
+}
+
+model User {
+  id              String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organization_id String       @db.Uuid
+  name            String       @db.VarChar(120)
+  email           String       @db.VarChar(160)
+  password_hash   String       @db.VarChar
+  role            Role         @default(employee)
+  department_id   String?      @db.Uuid
+  status          Status       @default(active)
+  created_at      DateTime     @default(now())
+  updated_at      DateTime     @updatedAt
+
+  organization    Organization @relation(fields: [organization_id], references: [id])
+  department      Department?  @relation(fields: [department_id], references: [id], name: "UserDepartment")
+
+  // Relationships
+  departmentsHeaded  Department[]       @relation("DepartmentHead")
+  assetsCreated      Asset[]            @relation("AssetCreator")
+  allocations        Allocation[]       @relation("EmployeeAllocation")
+  allocatedBy        Allocation[]       @relation("Allocator")
+  transferRequests   TransferRequest[]  @relation("TransferRequester")
+  transfersToMe      TransferRequest[]  @relation("TransferRequestedToEmployee")
+  transfersApproved  TransferRequest[]  @relation("TransferApprover")
+  bookings           Booking[]          @relation("BookingOwner")
+  maintenanceRaised  MaintenanceRequest[] @relation("MaintenanceRaiser")
+  maintenanceApprvd  MaintenanceRequest[] @relation("MaintenanceApprover")
+  auditCyclesCreated AuditCycle[]       @relation("AuditCycleCreator")
+  auditorCycles      AuditCycleAuditor[]
+  auditItemsVerified AuditItem[]        @relation("AuditItemVerifier")
+  notifications      Notification[]
+  activityLogs       ActivityLog[]
+  idempotencyKeys    IdempotencyKey[]
+
+  @@unique([organization_id, email])
+}
+
+model Department {
+  id                   String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organization_id      String       @db.Uuid
+  name                 String       @db.VarChar(120)
+  code                 String       @db.VarChar(20)
+  head_user_id         String?      @db.Uuid
+  parent_department_id String?      @db.Uuid
+  status               Status       @default(active)
+  created_at           DateTime     @default(now())
+  updated_at           DateTime     @updatedAt
+
+  organization         Organization @relation(fields: [organization_id], references: [id])
+  head_user            User?        @relation("DepartmentHead", fields: [head_user_id], references: [id])
+  parent_department    Department?  @relation("DepartmentHierarchy", fields: [parent_department_id], references: [id])
+  sub_departments      Department[] @relation("DepartmentHierarchy")
+
+  users                User[]       @relation("UserDepartment")
+  assets               Asset[]
+  allocations          Allocation[] @relation("DepartmentAllocation")
+  transfersToDept      TransferRequest[] @relation("TransferRequestedToDepartment")
+  bookings             Booking[]    @relation("DepartmentBooking")
+  auditCycles          AuditCycle[] @relation("AuditCycleScope")
+
+  @@unique([organization_id, name])
+  @@unique([organization_id, code])
+}
+
+model AssetCategory {
+  id              String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organization_id String       @db.Uuid
+  name            String       @db.VarChar(80)
+  custom_fields   Json?
+  status          Status       @default(active)
+  created_at      DateTime     @default(now())
+  updated_at      DateTime     @updatedAt
+
+  organization    Organization @relation(fields: [organization_id], references: [id])
+  assets          Asset[]
+
+  @@unique([organization_id, name])
+}
+
+enum AssetCondition {
+  excellent
+  good
+  fair
+  poor
+}
+
+enum AssetStatus {
+  available
+  allocated
+  reserved
+  under_maintenance
+  lost
+  retired
+  disposed
+}
+
+model Asset {
+  id               String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organization_id  String         @db.Uuid
+  asset_tag        String         @db.VarChar(20)
+  name             String         @db.VarChar(160)
+  category_id      String         @db.Uuid
+  serial_number    String?        @db.VarChar(120)
+  qr_code          String?        @db.VarChar(160)
+  acquisition_date DateTime       @db.Date
+  acquisition_cost Decimal        @db.Decimal(12, 2)
+  condition        AssetCondition
+  location         String         @db.VarChar(160)
+  department_id    String?        @db.Uuid
+  status           AssetStatus    @default(available)
+  is_bookable      Boolean        @default(false)
+  photo_url        String?        @db.VarChar
+  created_by       String?        @db.Uuid
+  created_at       DateTime       @default(now())
+  updated_at       DateTime       @updatedAt
+
+  organization     Organization   @relation(fields: [organization_id], references: [id])
+  category         AssetCategory  @relation(fields: [category_id], references: [id])
+  department       Department?    @relation(fields: [department_id], references: [id])
+  creator          User?          @relation("AssetCreator", fields: [created_by], references: [id])
+
+  allocations      Allocation[]
+  transferRequests TransferRequest[]
+  bookings         Booking[]
+  maintenanceReqs  MaintenanceRequest[]
+  auditItems       AuditItem[]
+
+  @@unique([organization_id, asset_tag])
+  @@unique([organization_id, serial_number])
+  @@unique([organization_id, qr_code])
+}
+
+enum AllocationStatus {
+  active
+  returned
+}
+
+model Allocation {
+  id                     String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organization_id        String           @db.Uuid
+  asset_id               String           @db.Uuid
+  employee_id            String?          @db.Uuid
+  department_id          String?          @db.Uuid
+  allocated_at           DateTime         @default(now())
+  expected_return_date   DateTime?        @db.Date
+  actual_return_date     DateTime?
+  return_condition_notes String?          @db.Text
+  status                 AllocationStatus @default(active)
+  allocated_by           String           @db.Uuid
+  created_at             DateTime         @default(now())
+  updated_at             DateTime         @updatedAt
+
+  organization           Organization     @relation(fields: [organization_id], references: [id])
+  asset                  Asset            @relation(fields: [asset_id], references: [id])
+  employee               User?            @relation("EmployeeAllocation", fields: [employee_id], references: [id])
+  department             Department?      @relation("DepartmentAllocation", fields: [department_id], references: [id])
+  allocator              User             @relation("Allocator", fields: [allocated_by], references: [id])
+
+  transferRequests       TransferRequest[]
+}
+
+enum TransferStatus {
+  requested
+  approved
+  rejected
+  reallocated
+}
+
+model TransferRequest {
+  id                         String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organization_id            String         @db.Uuid
+  asset_id                   String         @db.Uuid
+  current_allocation_id      String         @db.Uuid
+  requested_by               String         @db.Uuid
+  requested_to_employee_id   String?        @db.Uuid
+  requested_to_department_id String?        @db.Uuid
+  reason                     String         @db.Text
+  status                     TransferStatus @default(requested)
+  approved_by                String?        @db.Uuid
+  created_at                 DateTime       @default(now())
+  updated_at                 DateTime       @updatedAt
+
+  organization               Organization   @relation(fields: [organization_id], references: [id])
+  asset                      Asset          @relation(fields: [asset_id], references: [id])
+  current_allocation         Allocation     @relation(fields: [current_allocation_id], references: [id])
+  requester                  User           @relation("TransferRequester", fields: [requested_by], references: [id])
+  requested_to_employee      User?          @relation("TransferRequestedToEmployee", fields: [requested_to_employee_id], references: [id])
+  requested_to_department    Department?    @relation("TransferRequestedToDepartment", fields: [requested_to_department_id], references: [id])
+  approver                   User?          @relation("TransferApprover", fields: [approved_by], references: [id])
+}
+
+enum BookingStatus {
+  upcoming
+  ongoing
+  completed
+  cancelled
+}
+
+model Booking {
+  id              String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organization_id String        @db.Uuid
+  asset_id        String        @db.Uuid
+  booked_by       String        @db.Uuid
+  department_id   String?       @db.Uuid
+  start_time      DateTime      @db.Timestamptz
+  end_time        DateTime      @db.Timestamptz
+  status          BookingStatus @default(upcoming)
+  created_at      DateTime      @default(now())
+  updated_at      DateTime      @updatedAt
+
+  organization    Organization  @relation(fields: [organization_id], references: [id])
+  asset           Asset         @relation(fields: [asset_id], references: [id])
+  owner           User          @relation("BookingOwner", fields: [booked_by], references: [id])
+  department      Department?   @relation("DepartmentBooking", fields: [department_id], references: [id])
+}
+
+enum MaintenancePriority {
+  low
+  medium
+  high
+  critical
+}
+
+enum MaintenanceStatus {
+  pending
+  approved
+  rejected
+  technician_assigned
+  in_progress
+  resolved
+}
+
+model MaintenanceRequest {
+  id                String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organization_id   String              @db.Uuid
+  asset_id          String              @db.Uuid
+  raised_by         String              @db.Uuid
+  issue_description String              @db.Text
+  priority          MaintenancePriority
+  photo_url         String?             @db.VarChar
+  status            MaintenanceStatus   @default(pending)
+  approved_by       String?             @db.Uuid
+  technician_name   String?             @db.VarChar(120)
+  resolution_notes  String?             @db.Text
+  resolved_at       DateTime?
+  created_at        DateTime            @default(now())
+  updated_at        DateTime            @updatedAt
+
+  organization      Organization        @relation(fields: [organization_id], references: [id])
+  asset             Asset               @relation(fields: [asset_id], references: [id])
+  raiser            User                @relation("MaintenanceRaiser", fields: [raised_by], references: [id])
+  approver          User?               @relation("MaintenanceApprover", fields: [approved_by], references: [id])
+}
+
+enum AuditCycleStatus {
+  draft
+  active
+  closed
+}
+
+model AuditCycle {
+  id                  String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organization_id     String             @db.Uuid
+  name                String             @db.VarChar(160)
+  scope_department_id String?            @db.Uuid
+  scope_location      String?            @db.VarChar(160)
+  date_range_start    DateTime           @db.Date
+  date_range_end      DateTime           @db.Date
+  status              AuditCycleStatus   @default(draft)
+  created_by          String             @db.Uuid
+  closed_at           DateTime?
+  created_at          DateTime           @default(now())
+  updated_at          DateTime           @updatedAt
+
+  organization        Organization       @relation(fields: [organization_id], references: [id])
+  scope_department    Department?        @relation("AuditCycleScope", fields: [scope_department_id], references: [id])
+  creator             User               @relation("AuditCycleCreator", fields: [created_by], references: [id])
+  
+  auditors            AuditCycleAuditor[]
+  items               AuditItem[]
+}
+
+model AuditCycleAuditor {
+  audit_cycle_id String @db.Uuid
+  user_id        String @db.Uuid
+
+  audit_cycle    AuditCycle @relation(fields: [audit_cycle_id], references: [id])
+  user           User       @relation(fields: [user_id], references: [id])
+
+  @@id([audit_cycle_id, user_id])
+}
+
+enum AuditItemStatus {
+  pending
+  verified
+  missing
+  damaged
+}
+
+model AuditItem {
+  id                  String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  audit_cycle_id      String           @db.Uuid
+  asset_id            String           @db.Uuid
+  expected_location   String           @db.VarChar(160)
+  verification_status AuditItemStatus  @default(pending)
+  verified_by         String?          @db.Uuid
+  verified_at         DateTime?
+  notes               String?          @db.Text
+  created_at          DateTime         @default(now())
+  updated_at          DateTime         @updatedAt
+
+  audit_cycle         AuditCycle       @relation(fields: [audit_cycle_id], references: [id])
+  asset               Asset            @relation(fields: [asset_id], references: [id])
+  verifier            User?            @relation("AuditItemVerifier", fields: [verified_by], references: [id])
+}
+
+enum NotificationType {
+  asset_assigned
+  maintenance_approved
+  maintenance_rejected
+  booking_confirmed
+  booking_cancelled
+  booking_reminder
+  transfer_approved
+  overdue_return
+  audit_discrepancy
+}
+
+model Notification {
+  id                  String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organization_id     String           @db.Uuid
+  user_id             String           @db.Uuid
+  type                NotificationType
+  message             String           @db.Text
+  is_read             Boolean          @default(false)
+  related_entity_type String?          @db.VarChar(40)
+  related_entity_id   String?          @db.Uuid
+  created_at          DateTime         @default(now())
+
+  organization        Organization     @relation(fields: [organization_id], references: [id])
+  user                User             @relation(fields: [user_id], references: [id])
+}
+
+model ActivityLog {
+  id              String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organization_id String       @db.Uuid
+  user_id         String       @db.Uuid
+  action          String       @db.VarChar(160)
+  entity_type     String       @db.VarChar(40)
+  entity_id       String       @db.Uuid
+  metadata        Json?
+  created_at      DateTime     @default(now())
+
+  organization    Organization @relation(fields: [organization_id], references: [id])
+  user            User         @relation(fields: [user_id], references: [id])
+}
+
+model IdempotencyKey {
+  id              String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organization_id String       @db.Uuid
+  idempotency_key String       @db.VarChar(64)
+  user_id         String       @db.Uuid
+  route           String       @db.VarChar(160)
+  request_hash    String       @db.VarChar(64)
+  response_status Int?
+  response_body   Json?
+  created_at      DateTime     @default(now())
+
+  organization    Organization @relation(fields: [organization_id], references: [id])
+  user            User         @relation(fields: [user_id], references: [id])
+
+  @@unique([organization_id, idempotency_key])
+}

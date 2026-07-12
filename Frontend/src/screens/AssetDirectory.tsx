@@ -4,24 +4,41 @@ import StatusPill from "../components/StatusPill";
 import Button from "../components/Button";
 import RegisterAssetModal from "../components/RegisterAssetModal";
 
-const assets = [
-  { tag: "AF-0001", name: "Dell Latitude 5420", category: "Electronics", status: "allocated" as const, location: "Mumbai HQ - 4F", department: "Engineering" },
-  { tag: "AF-0002", name: "Herman Miller Aeron", category: "Furniture", status: "available" as const, location: "Mumbai HQ - 2F", department: "—" },
-  { tag: "AF-0003", name: "Toyota Innova - MH01AB1234", category: "Vehicles", status: "reserved" as const, location: "Parking Bay 2", department: "Logistics" },
-  { tag: "AF-0004", name: "Epson EB-X05 Projector", category: "Electronics", status: "maintenance" as const, location: "Conference Room B2", department: "—" },
-  { tag: "AF-0005", name: "HP LaserJet Pro M404", category: "Electronics", status: "available" as const, location: "Mumbai HQ - 3F", department: "Admin" },
-  { tag: "AF-0006", name: "Standing Desk - Adj.", category: "Furniture", status: "lost" as const, location: "Unknown", department: "Design" },
-  { tag: "AF-0007", name: "Server Rack Unit 02", category: "Electronics", status: "retired" as const, location: "Server Room", department: "IT" },
+type AssetStatus = "allocated" | "available" | "reserved" | "maintenance" | "lost" | "retired" | "disposed";
+
+interface Asset {
+  tag: string;
+  name: string;
+  category: string;
+  status: AssetStatus;
+  location: string;
+  department: string;
+}
+
+const initialAssets: Asset[] = [
+  { tag: "AF-0001", name: "Dell Latitude 5420", category: "Electronics", status: "allocated", location: "Mumbai HQ - 4F", department: "Engineering" },
+  { tag: "AF-0002", name: "Herman Miller Aeron", category: "Furniture", status: "available", location: "Mumbai HQ - 2F", department: "—" },
+  { tag: "AF-0003", name: "Toyota Innova - MH01AB1234", category: "Vehicles", status: "reserved", location: "Parking Bay 2", department: "Logistics" },
+  { tag: "AF-0004", name: "Epson EB-X05 Projector", category: "Electronics", status: "maintenance", location: "Conference Room B2", department: "—" },
+  { tag: "AF-0005", name: "HP LaserJet Pro M404", category: "Electronics", status: "available", location: "Mumbai HQ - 3F", department: "Admin" },
+  { tag: "AF-0006", name: "Standing Desk - Adj.", category: "Furniture", status: "lost", location: "Unknown", department: "Design" },
+  { tag: "AF-0007", name: "Server Rack Unit 02", category: "Electronics", status: "retired", location: "Server Room", department: "IT" },
 ];
 
 const categories = ["All", "Electronics", "Furniture", "Vehicles"];
 const statuses = ["All", "available", "allocated", "reserved", "maintenance", "lost", "retired", "disposed"];
 
 export default function AssetDirectory({ onOpenDetail }: { onOpenDetail: (tag: string) => void }) {
+  const [assets, setAssets] = useState<Asset[]>(initialAssets);
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState("All");
   const [status, setStatus] = useState("All");
   const [showRegister, setShowRegister] = useState(false);
+
+  function handleRegister(newAsset: Asset) {
+    setAssets((prev) => [newAsset, ...prev]);
+    setShowRegister(false);
+  }
 
   const filtered = assets.filter((a) => {
     const matchesSearch =
@@ -117,7 +134,13 @@ export default function AssetDirectory({ onOpenDetail }: { onOpenDetail: (tag: s
         </table>
       </div>
 
-      {showRegister && <RegisterAssetModal onClose={() => setShowRegister(false)} />}
+      {showRegister && (
+        <RegisterAssetModal
+          nextTag={`AF-${String(assets.length + 1).padStart(4, "0")}`}
+          onClose={() => setShowRegister(false)}
+          onRegister={handleRegister}
+        />
+      )}
     </div>
   );
 }

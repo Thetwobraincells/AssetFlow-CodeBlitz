@@ -44,17 +44,19 @@ const upcomingMaintenance = [
   { tag: "AF-0177", name: "Company Vehicle - MH01AB1234", reason: "Service due in 9 days", severity: "warn" as const },
 ];
 
-// 7 days x 12 hourly slots (8:00–20:00), values = booking count in that slot
+// Booking activity heatmap — rows = days of week, cols = 2-hr time slots (8am–8pm)
 const heatmapDays = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
-const heatmapHours = Array.from({ length: 12 }, (_, i) => 8 + i);
+// 6 two-hour slots: 8–10, 10–12, 12–14, 14–16, 16–18, 18–20
+const heatmapSlots = ["8–10am", "10–12pm", "12–2pm", "2–4pm", "4–6pm", "6–8pm"];
 const heatmapData: number[][] = [
-  [1, 2, 4, 6, 5, 2, 1, 3, 6, 7, 4, 1],
-  [0, 3, 5, 7, 6, 2, 1, 4, 7, 8, 5, 2],
-  [2, 4, 6, 8, 7, 3, 2, 5, 8, 9, 6, 3],
-  [1, 3, 5, 7, 6, 2, 1, 4, 7, 8, 5, 2],
-  [2, 5, 7, 9, 8, 4, 3, 6, 9, 9, 7, 4],
-  [0, 1, 2, 3, 2, 1, 0, 1, 2, 3, 2, 1],
-  [0, 0, 1, 1, 1, 0, 0, 1, 1, 1, 0, 0],
+  //  8am  10am 12pm  2pm  4pm  6pm
+  [    3,    7,   5,   8,   6,   2 ],  // Mon
+  [    2,    8,   6,   9,   7,   3 ],  // Tue
+  [    4,    9,   8,  10,   8,   3 ],  // Wed
+  [    3,    8,   6,   9,   7,   2 ],  // Thu
+  [    5,    9,   8,  10,   9,   4 ],  // Fri
+  [    1,    3,   4,   4,   3,   1 ],  // Sat
+  [    0,    1,   2,   2,   1,   0 ],  // Sun
 ];
 const heatmapMax = Math.max(...heatmapData.flat());
 
@@ -203,28 +205,65 @@ export default function Reports() {
       </Panel>
 
       {/* Booking heatmap */}
-      <Panel title="Resource Booking Heatmap" action={<span className="label-caps text-text-muted">Peak usage windows</span>}>
-        <div className="overflow-x-auto">
-          <div className="min-w-[560px]">
-            <div className="grid grid-cols-[40px_repeat(12,1fr)] gap-1 mb-1">
-              <div />
-              {heatmapHours.map((h) => (
-                <div key={h} className="font-mono text-[10px] text-text-muted text-center">{h}:00</div>
-              ))}
-            </div>
+      <Panel
+        title="Resource Booking Heatmap"
+        action={<span className="label-caps text-text-muted">Avg. active bookings per 2-hr slot</span>}
+      >
+        <div className="flex flex-col items-center gap-3">
+
+          {/* Slot labels */}
+          <div className="flex gap-[4px]" style={{ marginLeft: 44 }}>
+            {heatmapSlots.map((slot) => (
+              <div
+                key={slot}
+                style={{ width: 56 }}
+                className="text-[10px] font-mono text-text-muted text-center shrink-0 leading-none"
+              >
+                {slot}
+              </div>
+            ))}
+          </div>
+
+          {/* Grid */}
+          <div className="space-y-[4px]">
             {heatmapDays.map((day, dayIdx) => (
-              <div key={day} className="grid grid-cols-[40px_repeat(12,1fr)] gap-1 mb-1">
-                <div className="font-mono text-[10px] text-text-muted flex items-center">{day}</div>
-                {heatmapData[dayIdx].map((v, hourIdx) => (
+              <div key={day} className="flex items-center gap-[4px]">
+                <span
+                  className="text-[10px] font-mono text-text-muted shrink-0 text-right"
+                  style={{ width: 36 }}
+                >
+                  {day}
+                </span>
+                {heatmapData[dayIdx].map((v, slotIdx) => (
                   <div
-                    key={hourIdx}
-                    title={`${day} ${heatmapHours[hourIdx]}:00 — ${v} bookings`}
-                    className="aspect-square rounded-sm"
-                    style={{ backgroundColor: `rgba(242, 169, 59, ${0.08 + (v / heatmapMax) * 0.82})` }}
+                    key={slotIdx}
+                    title={`${day} · ${heatmapSlots[slotIdx]} — ${v} bookings`}
+                    className="rounded-[3px] shrink-0 cursor-default"
+                    style={{
+                      width: 56,
+                      height: 22,
+                      backgroundColor:
+                        v === 0
+                          ? "rgba(242,169,59,0.06)"
+                          : `rgba(242,169,59,${0.12 + (v / heatmapMax) * 0.88})`,
+                    }}
                   />
                 ))}
               </div>
             ))}
+          </div>
+
+          {/* Legend */}
+          <div className="flex items-center gap-[4px] self-start" style={{ marginLeft: 44 }}>
+            <span className="text-[10px] font-mono text-text-muted mr-1">Less</span>
+            {[0.06, 0.22, 0.42, 0.62, 0.88].map((op) => (
+              <div
+                key={op}
+                className="rounded-[3px]"
+                style={{ width: 22, height: 10, backgroundColor: `rgba(242,169,59,${op})` }}
+              />
+            ))}
+            <span className="text-[10px] font-mono text-text-muted ml-1">More active</span>
           </div>
         </div>
       </Panel>

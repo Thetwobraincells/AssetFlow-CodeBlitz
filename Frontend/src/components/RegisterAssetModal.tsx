@@ -6,13 +6,43 @@ import { useToast } from "./Toast";
 const conditions = ["Excellent", "Good", "Fair", "Poor"];
 const categoryOptions = ["Electronics", "Furniture", "Vehicles"];
 
-export default function RegisterAssetModal({ onClose }: { onClose: () => void }) {
+interface NewAsset {
+  tag: string;
+  name: string;
+  category: string;
+  status: "available";
+  location: string;
+  department: string;
+}
+
+export default function RegisterAssetModal({
+  onClose,
+  onRegister,
+  nextTag = "AF-0008 (auto-generated)",
+}: {
+  onClose: () => void;
+  onRegister?: (asset: NewAsset) => void;
+  nextTag?: string;
+}) {
   const [condition, setCondition] = useState("Excellent");
   const [bookable, setBookable] = useState(false);
+  const [name, setName] = useState("");
+  const [category, setCategory] = useState(categoryOptions[0]);
+  const [location, setLocation] = useState("");
   const { show, ToastOutlet } = useToast();
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+    if (onRegister) {
+      onRegister({
+        tag: nextTag.replace(" (auto-generated)", ""),
+        name: name || "Unnamed Asset",
+        category,
+        status: "available",
+        location: location || "—",
+        department: "—",
+      });
+    }
     show("Asset registered successfully.", "success");
     onClose();
   }
@@ -25,13 +55,19 @@ export default function RegisterAssetModal({ onClose }: { onClose: () => void })
             <label className="label-caps text-text-muted block mb-1.5">Name</label>
             <input
               required
+              value={name}
+              onChange={(e) => setName(e.target.value)}
               placeholder="Dell Latitude 5420"
               className="w-full bg-bg border border-border rounded-md px-3 py-2 text-sm text-text focus:outline-none focus:ring-1 focus:ring-amber"
             />
           </div>
           <div>
             <label className="label-caps text-text-muted block mb-1.5">Category</label>
-            <select className="w-full bg-bg border border-border rounded-md px-3 py-2 text-sm text-text focus:outline-none">
+            <select
+              value={category}
+              onChange={(e) => setCategory(e.target.value)}
+              className="w-full bg-bg border border-border rounded-md px-3 py-2 text-sm text-text focus:outline-none"
+            >
               {categoryOptions.map((c) => <option key={c}>{c}</option>)}
             </select>
           </div>
@@ -42,7 +78,7 @@ export default function RegisterAssetModal({ onClose }: { onClose: () => void })
             <label className="label-caps text-text-muted block mb-1.5">Asset Tag</label>
             <input
               disabled
-              value="AF-0008 (auto-generated)"
+              value={nextTag}
               className="w-full bg-surface-high border border-border rounded-md px-3 py-2 text-sm font-mono text-text-muted"
             />
           </div>
@@ -96,6 +132,8 @@ export default function RegisterAssetModal({ onClose }: { onClose: () => void })
         <div>
           <label className="label-caps text-text-muted block mb-1.5">Location</label>
           <input
+            value={location}
+            onChange={(e) => setLocation(e.target.value)}
             placeholder="Mumbai HQ - 4F"
             className="w-full bg-bg border border-border rounded-md px-3 py-2 text-sm text-text focus:outline-none focus:ring-1 focus:ring-amber"
           />

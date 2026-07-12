@@ -174,7 +174,7 @@ export default function Login({ onLoginSuccess }: { onLoginSuccess: () => void }
 
           {mode === "login" && (
             <div className="mt-4 p-3 bg-surface border border-border rounded-md">
-              <p className="text-xs text-text-muted mb-1">Demo credentials (no backend yet):</p>
+              <p className="text-xs text-text-muted mb-1">Demo credentials:</p>
               <p className="font-mono text-xs text-amber">{DEMO_EMAIL} / {DEMO_PASSWORD}</p>
               <button
                 type="button"

@@ -1,10 +1,12 @@
 import { useState } from "react";
 import { Plus } from "lucide-react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import Button from "../components/Button";
 import RaiseMaintenanceModal, { type MaintenanceRequest } from "../components/RaiseMaintenanceModal";
 import AssignTechModal from "../components/AssignTechModal";
 import ResolveModal from "../components/ResolveModal";
 import { useToast } from "../components/Toast";
+import { apiRequest } from "../lib/api";
 
 /* ------------------------------------------------------------------ */
 /* Types                                                                 */
@@ -54,27 +56,37 @@ const columns: { key: MaintStatus; title: string; dot: string; actionLabel?: str
 ];
 
 /* ------------------------------------------------------------------ */
-/* Initial data                                                          */
+/* Helper: map API shape → Card                                          */
 /* ------------------------------------------------------------------ */
-
-const initCards: Card[] = [
-  { id: "MNT-0001", tag: "AF-2110", asset: "Hydraulic Press A",         reporter: "SYS_AUTO",  priority: "critical", note: "Pressure valve leak detected.",         status: "pending" },
-  { id: "MNT-0002", tag: "AF-8442", asset: "Conveyor Motor 04",          reporter: "T. Silva",  priority: "high",     note: "Thermal sensor pre-failure reading.",   status: "approved" },
-  { id: "MNT-0003", tag: "AF-0062", asset: "Projector — Epson EB-X05",   reporter: "M. Chen",   priority: "medium",   note: "Tech: R. Fernandes assigned.",          status: "technician_assigned" },
-  { id: "MNT-0004", tag: "AF-3099", asset: "Forklift L-Series",          reporter: "OP-104",    priority: "high",     note: "Battery cell replacement underway.",    status: "in_progress" },
-  { id: "MNT-0005", tag: "AF-5501", asset: "CNC Lathe QT-250MY",         reporter: "TECH-42",   priority: "low",      note: "Scheduled calibration completed.",      status: "resolved" },
-];
+function toCard(r: any): Card {
+  return {
+    id:       r.id,
+    tag:      r.asset?.asset_tag || '—',
+    asset:    r.asset?.name || r.asset_id,
+    reporter: r.reported_by?.name || r.user?.name || 'Unknown',
+    priority: r.priority as Priority,
+    note:     r.resolution_notes || r.issue_description || '—',
+    status:   r.status as MaintStatus,
+  };
+}
 
 /* ------------------------------------------------------------------ */
 /* Screen                                                                */
 /* ------------------------------------------------------------------ */
 
 export default function Maintenance() {
-  const [cards, setCards]               = useState<Card[]>(initCards);
-  const [showRaise, setShowRaise]       = useState(false);
-  const [assignTarget, setAssignTarget] = useState<Card | null>(null);
+  const queryClient = useQueryClient();
+  const { show, ToastOutlet } = useToast();
+
+  const { data: response, isLoading } = useQuery({
+    queryKey: ['maintenance'],
+    queryFn:  () => apiRequest('/maintenance'),
+  });
+  const cards: Card[] = (response?.data || []).map(toCard);
+
+  const [showRaise, setShowRaise]         = useState(false);
+  const [assignTarget, setAssignTarget]   = useState<Card | null>(null);
   const [resolveTarget, setResolveTarget] = useState<Card | null>(null);
-  const { show, ToastOutlet }           = useToast();
 
   /* State transitions */
   const nextStatus: Partial<Record<MaintStatus, MaintStatus>> = {
@@ -84,64 +96,87 @@ export default function Maintenance() {
     in_progress:         "resolved",
   };
 
+  async function patchStatus(id: string, body: Record<string, any>, successMsg: string) {
+    try {
+      await apiRequest(`/maintenance/${id}/status`, {
+        method: 'PATCH',
+        body: JSON.stringify(body),
+      });
+      queryClient.invalidateQueries({ queryKey: ['maintenance'] });
+      show(successMsg, 'success');
+    } catch (err: any) {
+      show(err.message || 'Failed to update status', 'info');
+    }
+  }
+
   function handleAction(card: Card) {
     if (card.status === "approved") {
-      // Assign tech — open modal
       setAssignTarget(card);
       return;
     }
     if (card.status === "in_progress") {
-      // Resolve — open modal
       setResolveTarget(card);
       return;
     }
-    // Approve or Start Work — direct transition
     const next = nextStatus[card.status];
     if (next) {
-      setCards((prev) =>
-        prev.map((c) => (c.id === card.id ? { ...c, status: next } : c))
-      );
       const labels: Partial<Record<MaintStatus, string>> = {
-        pending: "approved",
+        pending:            "approved",
         technician_assigned: "started",
       };
-      show(`${card.asset} marked as ${labels[card.status] ?? next}.`, "success");
+      patchStatus(card.id, { status: next }, `${card.asset} marked as ${labels[card.status] ?? next}.`);
     }
   }
 
-  function saveAssignment(tech: string) {
+  async function saveAssignment(tech: string) {
     if (!assignTarget) return;
-    setCards((prev) =>
-      prev.map((c) =>
-        c.id === assignTarget.id
-          ? { ...c, status: "technician_assigned", note: `Tech: ${tech} assigned.` }
-          : c
-      )
+    await patchStatus(assignTarget.id,
+      { status: 'technician_assigned', technician_name: tech },
+      `${tech} assigned to ${assignTarget.asset}.`
     );
-    show(`${tech} assigned to ${assignTarget.asset}.`);
     setAssignTarget(null);
   }
 
-  function saveResolve(notes: string) {
+  async function saveResolve(notes: string) {
     if (!resolveTarget) return;
-    setCards((prev) =>
-      prev.map((c) =>
-        c.id === resolveTarget.id
-          ? { ...c, status: "resolved", note: notes }
-          : c
-      )
+    await patchStatus(resolveTarget.id,
+      { status: 'resolved', resolution_notes: notes },
+      `${resolveTarget.asset} marked as resolved.`
     );
-    show(`${resolveTarget.asset} marked as resolved.`);
     setResolveTarget(null);
   }
 
-  function addCard(req: MaintenanceRequest) {
-    setCards((prev) => [
-      { ...req, id: req.id, status: "pending" },
-      ...prev,
-    ]);
-    show(`Maintenance request ${req.id} submitted.`);
-    setShowRaise(false);
+  async function addCard(req: MaintenanceRequest) {
+    // req comes from the modal — it has tag (asset_tag) and note (description)
+    // We need asset_id: fetch assets and find by tag, or use note as description
+    try {
+      // Grab asset id from tag lookup
+      const assetsRes = await apiRequest('/assets');
+      const matched = (assetsRes.data || []).find((a: any) =>
+        a.asset_tag?.toUpperCase() === req.tag?.toUpperCase()
+      );
+      if (!matched) {
+        show('Asset tag not found. Please use a valid tag.', 'info');
+        return;
+      }
+      await apiRequest('/maintenance', {
+        method: 'POST',
+        body: JSON.stringify({
+          asset_id: matched.id,
+          issue_description: req.note,
+          priority: req.priority,
+        }),
+      });
+      queryClient.invalidateQueries({ queryKey: ['maintenance'] });
+      show(`Maintenance request submitted for ${req.asset}.`);
+      setShowRaise(false);
+    } catch (err: any) {
+      show(err.message || 'Failed to submit request', 'info');
+    }
+  }
+
+  if (isLoading) {
+    return <div className="p-8 text-center text-text-muted">Loading maintenance requests...</div>;
   }
 
   return (
@@ -186,7 +221,7 @@ export default function Maintenance() {
                       </span>
                     </div>
                     <h3 className="text-sm font-medium text-text">{c.asset}</h3>
-                    <p className="text-xs text-text-muted mt-1">{c.note}</p>
+                    <p className="text-xs text-text-muted mt-1 line-clamp-2">{c.note}</p>
                     <div className="flex items-center justify-between mt-3 pt-3 border-t border-border/60">
                       <span className="text-xs text-text-muted">{c.reporter}</span>
                       {col.actionLabel && (

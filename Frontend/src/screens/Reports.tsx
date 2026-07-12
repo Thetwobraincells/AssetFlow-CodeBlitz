@@ -2,63 +2,11 @@ import { useState } from "react";
 import {
   Download, TrendingUp, TrendingDown, Package, Gauge, Wrench, AlertTriangle,
 } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
 import StatCard from "../components/StatCard";
 import Button from "../components/Button";
 import { useToast } from "../components/Toast";
-
-/* ---------- Mock data ---------- */
-
-const mostUsedAssets = [
-  { tag: "AF-0114", name: "Dell Latitude 5420", bookingsOrAllocations: 42 },
-  { tag: "AF-0003", name: "Toyota Innova", bookingsOrAllocations: 37 },
-  { tag: "AF-0201", name: "Conference Room Mic Kit", bookingsOrAllocations: 31 },
-  { tag: "AF-0055", name: "HP LaserJet Pro M404", bookingsOrAllocations: 26 },
-];
-
-const idleAssets = [
-  { tag: "AF-0088", name: "Standing Desk - Adj.", daysIdle: 96 },
-  { tag: "AF-0142", name: "Projector - BenQ MW632ST", daysIdle: 74 },
-  { tag: "AF-0067", name: "Herman Miller Aeron", daysIdle: 61 },
-  { tag: "AF-0033", name: "Server Rack Unit 04", daysIdle: 58 },
-];
-
-const maintenanceByCategory = [
-  { label: "Electronics", count: 24 },
-  { label: "Vehicles", count: 11 },
-  { label: "Furniture", count: 4 },
-];
-
-const departmentAllocations = [
-  { department: "Engineering", count: 128 },
-  { department: "Logistics", count: 64 },
-  { department: "IT", count: 52 },
-  { department: "Admin", count: 38 },
-  { department: "Marketing", count: 21 },
-  { department: "Design", count: 17 },
-];
-
-const upcomingMaintenance = [
-  { tag: "AF-0114", name: "Dell Latitude 5420", reason: "Warranty ends in 12 days", severity: "warn" as const },
-  { tag: "AF-0062", name: "Epson EB-X05 Projector", reason: "Due for calibration in 4 days", severity: "critical" as const },
-  { tag: "AF-0007", name: "Server Rack Unit 02", reason: "Nearing retirement (5yr threshold)", severity: "info" as const },
-  { tag: "AF-0177", name: "Company Vehicle - MH01AB1234", reason: "Service due in 9 days", severity: "warn" as const },
-];
-
-// Booking activity heatmap — rows = days of week, cols = 2-hr time slots (8am–8pm)
-const heatmapDays = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
-// 6 two-hour slots: 8–10, 10–12, 12–14, 14–16, 16–18, 18–20
-const heatmapSlots = ["8–10am", "10–12pm", "12–2pm", "2–4pm", "4–6pm", "6–8pm"];
-const heatmapData: number[][] = [
-  //  8am  10am 12pm  2pm  4pm  6pm
-  [    3,    7,   5,   8,   6,   2 ],  // Mon
-  [    2,    8,   6,   9,   7,   3 ],  // Tue
-  [    4,    9,   8,  10,   8,   3 ],  // Wed
-  [    3,    8,   6,   9,   7,   2 ],  // Thu
-  [    5,    9,   8,  10,   9,   4 ],  // Fri
-  [    1,    3,   4,   4,   3,   1 ],  // Sat
-  [    0,    1,   2,   2,   1,   0 ],  // Sun
-];
-const heatmapMax = Math.max(...heatmapData.flat());
+import { apiRequest } from "../lib/api";
 
 /* ---------- Small chart helpers ---------- */
 
@@ -92,6 +40,9 @@ function MiniBarList({
           </div>
         </div>
       ))}
+      {items.length === 0 && (
+        <p className="text-xs text-text-muted text-center py-2">No data available</p>
+      )}
     </div>
   );
 }
@@ -110,22 +61,77 @@ function Panel({ title, action, children }: { title: string; action?: React.Reac
 
 const severityStyles = {
   critical: "text-red border-red/30 bg-red/5",
-  warn: "text-orange border-orange/30 bg-orange/5",
-  info: "text-blue border-blue/30 bg-blue/5",
+  warn:     "text-orange border-orange/30 bg-orange/5",
+  info:     "text-blue border-blue/30 bg-blue/5",
 };
 
 /* ---------- Screen ---------- */
 
 const ranges = ["Last 7 days", "Last 30 days", "Last 90 days", "Year to date"];
 
+// Booking activity heatmap — static display (no backend endpoint)
+const heatmapDays = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+const heatmapSlots = ["8–10am", "10–12pm", "12–2pm", "2–4pm", "4–6pm", "6–8pm"];
+const heatmapData: number[][] = [
+  [3, 7, 5, 8, 6, 2],
+  [2, 8, 6, 9, 7, 3],
+  [4, 9, 8, 10, 8, 3],
+  [3, 8, 6, 9, 7, 2],
+  [5, 9, 8, 10, 9, 4],
+  [1, 3, 4, 4, 3, 1],
+  [0, 1, 2, 2, 1, 0],
+];
+const heatmapMax = Math.max(...heatmapData.flat());
+
 export default function Reports() {
   const [range, setRange] = useState(ranges[1]);
   const { show, ToastOutlet } = useToast();
 
+  // Fetch all report data
+  const { data: kpisRes }         = useQuery({ queryKey: ['reports/kpis'],                 queryFn: () => apiRequest('/reports/kpis') });
+  const { data: utilizationRes }  = useQuery({ queryKey: ['reports/utilization'],          queryFn: () => apiRequest('/reports/utilization') });
+  const { data: maintenanceRes }  = useQuery({ queryKey: ['reports/maintenance-frequency'], queryFn: () => apiRequest('/reports/maintenance-frequency') });
+  const { data: idleRes }         = useQuery({ queryKey: ['reports/idle-assets'],           queryFn: () => apiRequest('/reports/idle-assets') });
+
+  const kpis        = kpisRes?.data        || {};
+  const utilization = utilizationRes?.data  || [];
+  const maintenance = maintenanceRes?.data  || [];
+  const idleAssets  = idleRes?.data         || [];
+
+  // Map utilization: most-used assets
+  const mostUsed = (Array.isArray(utilization) ? utilization : []).map((a: any) => ({
+    label: `${a.asset_tag || ''} · ${a.name || a.asset_name || ''}`,
+    value: a.usage_count || a.bookings_count || a.count || 0,
+    sublabel: 'uses',
+  }));
+
+  // Map maintenance frequency
+  const maintFreq = (Array.isArray(maintenance) ? maintenance : []).map((c: any) => ({
+    label: c.category || c.name || '—',
+    value: c.count || c.requests || 0,
+    sublabel: 'requests',
+  }));
+
+  // Map idle assets
+  const idle = (Array.isArray(idleAssets) ? idleAssets : []).map((a: any) => ({
+    label: `${a.asset_tag || ''} · ${a.name || ''}`,
+    value: a.idle_days || a.days_idle || 0,
+    sublabel: 'days idle',
+  }));
+
+  // Upcoming maintenance from idle assets with flags
+  const upcomingMaint = (Array.isArray(idleAssets) ? idleAssets : [])
+    .filter((a: any) => a.idle_days > 30)
+    .slice(0, 4)
+    .map((a: any) => ({
+      tag:      a.asset_tag || '—',
+      name:     a.name || '—',
+      reason:   `Idle for ${a.idle_days || 0} days`,
+      severity: a.idle_days > 90 ? 'critical' : a.idle_days > 60 ? 'warn' : 'info' as const,
+    }));
+
   function handleExport() {
-    // Dummy export — no backend yet. Swap for a real
-    // GET /reports/export?type=csv call once the endpoint exists.
-    show("Export queued — CSV will be wired once /reports/export is live.", "info");
+    show("Export queued — CSV download not yet wired to a backend endpoint.", "info");
   }
 
   return (
@@ -137,9 +143,7 @@ export default function Reports() {
           onChange={(e) => setRange(e.target.value)}
           className="bg-surface border border-border rounded-md px-3 py-2 text-sm text-text focus:outline-none"
         >
-          {ranges.map((r) => (
-            <option key={r} value={r}>{r}</option>
-          ))}
+          {ranges.map((r) => <option key={r} value={r}>{r}</option>)}
         </select>
         <Button variant="outline" onClick={handleExport} className="flex items-center gap-2 ml-auto">
           <Download size={16} /> Export CSV
@@ -148,70 +152,56 @@ export default function Reports() {
 
       {/* KPI row */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        <StatCard label="Total Assets" value={696} icon={Package} accent="amber" />
-        <StatCard label="Utilization Rate" value="71%" icon={Gauge} accent="teal" sublabel="+4% vs prior period" />
-        <StatCard label="Idle Assets (30d+)" value={39} icon={TrendingDown} accent="slate" />
-        <StatCard label="Maintenance / Month" value={12.4} icon={Wrench} accent="orange" />
+        <StatCard label="Total Assets"       value={kpis.total_assets       ?? '—'} icon={Package}     accent="amber" />
+        <StatCard label="Utilization Rate"   value={kpis.utilization_rate   ? `${kpis.utilization_rate}%` : '—'} icon={Gauge} accent="teal"
+          sublabel={kpis.utilization_delta ? `${kpis.utilization_delta > 0 ? '+' : ''}${kpis.utilization_delta}% vs prior` : undefined} />
+        <StatCard label="Idle Assets (30d+)" value={kpis.idle_assets_count  ?? idle.length} icon={TrendingDown} accent="slate" />
+        <StatCard label="Maintenance / Month" value={kpis.avg_maintenance_per_month ?? '—'} icon={Wrench} accent="orange" />
       </div>
 
       {/* Utilization: most-used vs idle */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <Panel title="Most-Used Assets" action={<TrendingUp size={14} className="text-teal" />}>
-          <MiniBarList
-            accent="teal"
-            items={mostUsedAssets.map((a) => ({ label: `${a.tag} · ${a.name}`, value: a.bookingsOrAllocations, sublabel: "uses" }))}
-          />
+          <MiniBarList accent="teal" items={mostUsed} />
         </Panel>
         <Panel title="Idle Assets" action={<TrendingDown size={14} className="text-slate" />}>
-          <MiniBarList
-            accent="slate"
-            items={idleAssets.map((a) => ({ label: `${a.tag} · ${a.name}`, value: a.daysIdle, sublabel: "days idle" }))}
-          />
+          <MiniBarList accent="slate" items={idle} />
         </Panel>
       </div>
 
       {/* Maintenance frequency + department allocation */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <Panel title="Maintenance Frequency by Category">
-          <MiniBarList
-            accent="orange"
-            items={maintenanceByCategory.map((c) => ({ label: c.label, value: c.count, sublabel: "requests" }))}
-          />
+          <MiniBarList accent="orange" items={maintFreq} />
         </Panel>
-        <Panel title="Department-wise Allocation Summary">
-          <MiniBarList
-            accent="amber"
-            items={departmentAllocations.map((d) => ({ label: d.department, value: d.count, sublabel: "assets" }))}
-          />
+        <Panel title="Due for Maintenance / Long Idle" action={<AlertTriangle size={14} className="text-orange" />}>
+          {upcomingMaint.length === 0 ? (
+            <p className="text-xs text-text-muted text-center py-2">No assets flagged</p>
+          ) : (
+            <div className="space-y-2">
+              {upcomingMaint.map((item) => (
+                <div
+                  key={item.tag}
+                  className={`flex items-center justify-between px-3 py-2 rounded-md border ${severityStyles[item.severity]}`}
+                >
+                  <div className="flex items-center gap-3">
+                    <span className="font-mono text-xs text-amber">{item.tag}</span>
+                    <span className="text-sm text-text">{item.name}</span>
+                  </div>
+                  <span className="text-xs font-mono">{item.reason}</span>
+                </div>
+              ))}
+            </div>
+          )}
         </Panel>
       </div>
 
-      {/* Due for maintenance / nearing retirement */}
-      <Panel title="Due for Maintenance / Nearing Retirement" action={<AlertTriangle size={14} className="text-orange" />}>
-        <div className="space-y-2">
-          {upcomingMaintenance.map((item) => (
-            <div
-              key={item.tag}
-              className={`flex items-center justify-between px-3 py-2 rounded-md border ${severityStyles[item.severity]}`}
-            >
-              <div className="flex items-center gap-3">
-                <span className="font-mono text-xs text-amber">{item.tag}</span>
-                <span className="text-sm text-text">{item.name}</span>
-              </div>
-              <span className="text-xs font-mono">{item.reason}</span>
-            </div>
-          ))}
-        </div>
-      </Panel>
-
-      {/* Booking heatmap */}
+      {/* Booking heatmap (static display) */}
       <Panel
         title="Resource Booking Heatmap"
         action={<span className="label-caps text-text-muted">Avg. active bookings per 2-hr slot</span>}
       >
         <div className="flex flex-col items-center gap-3">
-
-          {/* Slot labels */}
           <div className="flex gap-[4px]" style={{ marginLeft: 44 }}>
             {heatmapSlots.map((slot) => (
               <div
@@ -224,14 +214,10 @@ export default function Reports() {
             ))}
           </div>
 
-          {/* Grid */}
           <div className="space-y-[4px]">
             {heatmapDays.map((day, dayIdx) => (
               <div key={day} className="flex items-center gap-[4px]">
-                <span
-                  className="text-[10px] font-mono text-text-muted shrink-0 text-right"
-                  style={{ width: 36 }}
-                >
+                <span className="text-[10px] font-mono text-text-muted shrink-0 text-right" style={{ width: 36 }}>
                   {day}
                 </span>
                 {heatmapData[dayIdx].map((v, slotIdx) => (
@@ -253,7 +239,6 @@ export default function Reports() {
             ))}
           </div>
 
-          {/* Legend */}
           <div className="flex items-center gap-[4px] self-start" style={{ marginLeft: 44 }}>
             <span className="text-[10px] font-mono text-text-muted mr-1">Less</span>
             {[0.06, 0.22, 0.42, 0.62, 0.88].map((op) => (

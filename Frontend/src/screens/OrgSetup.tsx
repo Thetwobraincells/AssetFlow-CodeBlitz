@@ -1,6 +1,7 @@
 import { useState } from "react";
 import type { ReactNode } from "react";
 import { Plus, Pencil, ShieldCheck, Search, Filter } from "lucide-react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import Tabs from "../components/Tabs";
 import Button from "../components/Button";
 import StatusPill from "../components/StatusPill";
@@ -8,45 +9,31 @@ import AddDepartmentModal, { type Department } from "../components/AddDepartment
 import AddCategoryModal, { type AssetCategory } from "../components/AddCategoryModal";
 import PromoteEmployeeModal from "../components/PromoteEmployeeModal";
 import { useToast } from "../components/Toast";
+import { apiRequest } from "../lib/api";
 
 /* ------------------------------------------------------------------ */
-/* Initial data                                                          */
+/* Types                                                                 */
 /* ------------------------------------------------------------------ */
-
-const initDepartments: Department[] = [
-  { name: "Engineering", code: "ENG", head: "Aditi Rao", parent: "—", status: "active" },
-  { name: "Facilities",  code: "FAC", head: "Rohan Mehta", parent: "—", status: "active" },
-  { name: "Field Ops",   code: "OPS", head: "Sana Iqbal",  parent: "—", status: "active" },
-  { name: "Marketing",   code: "MKT", head: "—",           parent: "—", status: "inactive" },
-];
-
-const initCategories: AssetCategory[] = [
-  { name: "Electronics", fields: "warranty_period_months", status: "active" },
-  { name: "Furniture",   fields: "—",                      status: "active" },
-  { name: "Vehicles",    fields: "registration_expiry, insurance_renewal", status: "active" },
-];
 
 interface Employee {
+  id: string;
   name: string;
   email: string;
   dept: string;
   role: string;
+  status: string;
 }
 
-const initEmployees: Employee[] = [
-  { name: "Priya Shah",  email: "priya.shah@acme.com",  dept: "Engineering", role: "Employee" },
-  { name: "Raj Mehta",   email: "raj.mehta@acme.com",   dept: "Field Ops",   role: "Employee" },
-  { name: "Aditi Rao",   email: "aditi.rao@acme.com",   dept: "Engineering", role: "Department Head" },
-  { name: "T. Silva",    email: "t.silva@acme.com",      dept: "Facilities",  role: "Asset Manager" },
-  { name: "J. Kowalski", email: "j.kowalski@acme.com",  dept: "—",           role: "Admin" },
-];
-
 const roleColors: Record<string, string> = {
-  Admin:             "bg-amber/10 text-amber border-amber/30",
-  "Asset Manager":   "bg-teal/10 text-teal border-teal/30",
-  "Department Head": "bg-blue/10 text-blue border-blue/30",
-  Employee:          "bg-slate/10 text-slate border-slate/30",
+  admin:            "bg-amber/10 text-amber border-amber/30",
+  asset_manager:    "bg-teal/10 text-teal border-teal/30",
+  department_head:  "bg-blue/10 text-blue border-blue/30",
+  employee:         "bg-slate/10 text-slate border-slate/30",
 };
+
+function formatRole(role: string): string {
+  return role.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+}
 
 /* ------------------------------------------------------------------ */
 /* Panel shell                                                           */
@@ -76,72 +63,133 @@ function Td({ children, className = "" }: { children: ReactNode; className?: str
 /* ------------------------------------------------------------------ */
 
 export default function OrgSetup() {
+  const queryClient = useQueryClient();
+  const { show, ToastOutlet } = useToast();
   const [tab, setTab] = useState("departments");
 
-  // --- Departments state ---
-  const [departments, setDepartments]             = useState<Department[]>(initDepartments);
-  const [deptModal, setDeptModal]                 = useState<"add" | Department | null>(null);
+  // --- Departments ---
+  const { data: deptsRes, isLoading: deptsLoading } = useQuery({
+    queryKey: ['departments'],
+    queryFn:  () => apiRequest('/departments'),
+  });
+  const departments: Department[] = (deptsRes?.data || []).map((d: any): Department => ({
+    name:   d.name,
+    code:   d.code || d.id.slice(0, 4).toUpperCase(),
+    head:   d.head?.name || '—',
+    parent: d.parent?.name || '—',
+    status: d.is_active ? 'active' : 'inactive',
+    _id:    d.id,
+  } as any));
 
-  // --- Categories state ---
-  const [categories, setCategories]               = useState<AssetCategory[]>(initCategories);
-  const [catModal, setCatModal]                   = useState<"add" | AssetCategory | null>(null);
+  // --- Categories ---
+  const { data: catsRes, isLoading: catsLoading } = useQuery({
+    queryKey: ['categories'],
+    queryFn:  () => apiRequest('/categories'),
+  });
+  const categories: AssetCategory[] = (catsRes?.data || []).map((c: any): AssetCategory => ({
+    name:   c.name,
+    fields: c.custom_fields?.join(', ') || '—',
+    status: c.is_active ? 'active' : 'inactive',
+    _id:    c.id,
+  } as any));
 
-  // --- Employees state ---
-  const [employees, setEmployees]                 = useState<Employee[]>(initEmployees);
-  const [promoteTarget, setPromoteTarget]         = useState<Employee | null>(null);
-  const [empSearch, setEmpSearch]                 = useState("");
-  const [empDeptFilter, setEmpDeptFilter]         = useState("All");
-  const [empRoleFilter, setEmpRoleFilter]         = useState("All");
+  // --- Employees ---
+  const { data: usersRes, isLoading: usersLoading } = useQuery({
+    queryKey: ['users'],
+    queryFn:  () => apiRequest('/users'),
+  });
+  const employees: Employee[] = (usersRes?.data || []).map((u: any): Employee => ({
+    id:     u.id,
+    name:   u.name,
+    email:  u.email,
+    dept:   u.department?.name || '—',
+    role:   u.role,
+    status: u.status || 'active',
+  }));
 
-  const { show, ToastOutlet } = useToast();
+  // --- Modal state ---
+  const [deptModal, setDeptModal]         = useState<"add" | Department | null>(null);
+  const [catModal, setCatModal]           = useState<"add" | AssetCategory | null>(null);
+  const [promoteTarget, setPromoteTarget] = useState<Employee | null>(null);
+
+  // --- Employee filters ---
+  const [empSearch, setEmpSearch]           = useState("");
+  const [empDeptFilter, setEmpDeptFilter]   = useState("All");
+  const [empRoleFilter, setEmpRoleFilter]   = useState("All");
 
   /* Dept handlers */
-  function saveDept(dept: Department) {
-    if (deptModal === "add") {
-      setDepartments((prev) => [...prev, dept]);
-      show(`Department "${dept.name}" added.`);
-    } else {
-      setDepartments((prev) =>
-        prev.map((d) => (d.code === (deptModal as Department).code ? dept : d))
-      );
-      show(`Department "${dept.name}" updated.`);
+  async function saveDept(dept: Department) {
+    try {
+      const raw = dept as any;
+      if (deptModal === "add") {
+        await apiRequest('/departments', {
+          method: 'POST',
+          body: JSON.stringify({ name: dept.name, code: dept.code }),
+        });
+        show(`Department "${dept.name}" added.`);
+      } else {
+        await apiRequest(`/departments/${raw._id}`, {
+          method: 'PATCH',
+          body: JSON.stringify({ name: dept.name, is_active: dept.status === 'active' }),
+        });
+        show(`Department "${dept.name}" updated.`);
+      }
+      queryClient.invalidateQueries({ queryKey: ['departments'] });
+      setDeptModal(null);
+    } catch (err: any) {
+      show(err.message || 'Failed to save department', 'info');
     }
-    setDeptModal(null);
   }
 
   /* Category handlers */
-  function saveCat(cat: AssetCategory) {
-    if (catModal === "add") {
-      setCategories((prev) => [...prev, cat]);
-      show(`Category "${cat.name}" added.`);
-    } else {
-      setCategories((prev) =>
-        prev.map((c) => (c.name === (catModal as AssetCategory).name ? cat : c))
-      );
-      show(`Category "${cat.name}" updated.`);
+  async function saveCat(cat: AssetCategory) {
+    try {
+      const raw = cat as any;
+      if (catModal === "add") {
+        await apiRequest('/categories', {
+          method: 'POST',
+          body: JSON.stringify({ name: cat.name }),
+        });
+        show(`Category "${cat.name}" added.`);
+      } else {
+        await apiRequest(`/categories/${raw._id}`, {
+          method: 'PATCH',
+          body: JSON.stringify({ name: cat.name, is_active: cat.status === 'active' }),
+        });
+        show(`Category "${cat.name}" updated.`);
+      }
+      queryClient.invalidateQueries({ queryKey: ['categories'] });
+      setCatModal(null);
+    } catch (err: any) {
+      show(err.message || 'Failed to save category', 'info');
     }
-    setCatModal(null);
   }
 
   /* Employee role promotion */
-  function savePromotion(newRole: string) {
+  async function savePromotion(newRole: string) {
     if (!promoteTarget) return;
-    setEmployees((prev) =>
-      prev.map((e) => (e.email === promoteTarget.email ? { ...e, role: newRole } : e))
-    );
-    show(`${promoteTarget.name} promoted to ${newRole}.`);
-    setPromoteTarget(null);
+    try {
+      await apiRequest(`/users/${promoteTarget.id}/role`, {
+        method: 'PATCH',
+        body: JSON.stringify({ role: newRole.toLowerCase().replace(/ /g, '_') }),
+      });
+      queryClient.invalidateQueries({ queryKey: ['users'] });
+      show(`${promoteTarget.name} role updated to ${newRole}.`);
+      setPromoteTarget(null);
+    } catch (err: any) {
+      show(err.message || 'Failed to update role', 'info');
+    }
   }
 
   /* Employee filters */
-  const uniqueDepts = ["All", ...Array.from(new Set(initEmployees.map((e) => e.dept).filter((d) => d !== "—")))];
-  const uniqueRoles = ["All", ...Array.from(new Set(initEmployees.map((e) => e.role)))];
+  const uniqueDepts = ["All", ...Array.from(new Set(employees.map((e) => e.dept).filter((d) => d !== "—")))];
+  const uniqueRoles = ["All", ...Array.from(new Set(employees.map((e) => formatRole(e.role))))];
 
   const filteredEmployees = employees.filter((e) => {
     const matchSearch = e.name.toLowerCase().includes(empSearch.toLowerCase()) ||
                         e.email.toLowerCase().includes(empSearch.toLowerCase());
-    const matchDept = empDeptFilter === "All" || e.dept === empDeptFilter;
-    const matchRole = empRoleFilter === "All" || e.role === empRoleFilter;
+    const matchDept   = empDeptFilter === "All" || e.dept === empDeptFilter;
+    const matchRole   = empRoleFilter === "All" || formatRole(e.role) === empRoleFilter;
     return matchSearch && matchDept && matchRole;
   });
 
@@ -167,33 +215,38 @@ export default function OrgSetup() {
             </Button>
           }
         >
-          <table className="w-full">
-            <thead className="border-b border-border">
-              <tr>
-                <Th>Name</Th><Th>Code</Th><Th>Head</Th><Th>Parent</Th><Th>Status</Th><Th />
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border">
-              {departments.map((d) => (
-                <tr key={d.code} className="hover:bg-surface-hover">
-                  <Td className="font-medium">{d.name}</Td>
-                  <Td className="font-mono text-text-muted">{d.code}</Td>
-                  <Td className="text-text-muted">{d.head}</Td>
-                  <Td className="text-text-muted">{d.parent}</Td>
-                  <Td><StatusPill status={d.status} label={d.status} /></Td>
-                  <Td className="text-right">
-                    <button
-                      onClick={() => setDeptModal(d)}
-                      className="text-text-muted hover:text-text transition-colors"
-                      title="Edit department"
-                    >
-                      <Pencil size={14} />
-                    </button>
-                  </Td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          {deptsLoading ? (
+            <p className="text-sm text-text-muted text-center py-8">Loading...</p>
+          ) : (
+            <table className="w-full">
+              <thead className="border-b border-border">
+                <tr><Th>Name</Th><Th>Code</Th><Th>Head</Th><Th>Parent</Th><Th>Status</Th><Th /></tr>
+              </thead>
+              <tbody className="divide-y divide-border">
+                {departments.map((d) => (
+                  <tr key={d.code} className="hover:bg-surface-hover">
+                    <Td className="font-medium">{d.name}</Td>
+                    <Td className="font-mono text-text-muted">{d.code}</Td>
+                    <Td className="text-text-muted">{d.head}</Td>
+                    <Td className="text-text-muted">{d.parent}</Td>
+                    <Td><StatusPill status={d.status} label={d.status} /></Td>
+                    <Td className="text-right">
+                      <button
+                        onClick={() => setDeptModal(d)}
+                        className="text-text-muted hover:text-text transition-colors"
+                        title="Edit department"
+                      >
+                        <Pencil size={14} />
+                      </button>
+                    </Td>
+                  </tr>
+                ))}
+                {departments.length === 0 && (
+                  <tr><td colSpan={6} className="text-center py-8 text-sm text-text-muted">No departments yet.</td></tr>
+                )}
+              </tbody>
+            </table>
+          )}
         </Panel>
       )}
 
@@ -207,31 +260,36 @@ export default function OrgSetup() {
             </Button>
           }
         >
-          <table className="w-full">
-            <thead className="border-b border-border">
-              <tr>
-                <Th>Name</Th><Th>Custom Fields</Th><Th>Status</Th><Th />
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border">
-              {categories.map((c) => (
-                <tr key={c.name} className="hover:bg-surface-hover">
-                  <Td className="font-medium">{c.name}</Td>
-                  <Td className="font-mono text-xs text-text-muted">{c.fields}</Td>
-                  <Td><StatusPill status={c.status} label={c.status} /></Td>
-                  <Td className="text-right">
-                    <button
-                      onClick={() => setCatModal(c)}
-                      className="text-text-muted hover:text-text transition-colors"
-                      title="Edit category"
-                    >
-                      <Pencil size={14} />
-                    </button>
-                  </Td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          {catsLoading ? (
+            <p className="text-sm text-text-muted text-center py-8">Loading...</p>
+          ) : (
+            <table className="w-full">
+              <thead className="border-b border-border">
+                <tr><Th>Name</Th><Th>Custom Fields</Th><Th>Status</Th><Th /></tr>
+              </thead>
+              <tbody className="divide-y divide-border">
+                {categories.map((c) => (
+                  <tr key={c.name} className="hover:bg-surface-hover">
+                    <Td className="font-medium">{c.name}</Td>
+                    <Td className="font-mono text-xs text-text-muted">{c.fields}</Td>
+                    <Td><StatusPill status={c.status} label={c.status} /></Td>
+                    <Td className="text-right">
+                      <button
+                        onClick={() => setCatModal(c)}
+                        className="text-text-muted hover:text-text transition-colors"
+                        title="Edit category"
+                      >
+                        <Pencil size={14} />
+                      </button>
+                    </Td>
+                  </tr>
+                ))}
+                {categories.length === 0 && (
+                  <tr><td colSpan={4} className="text-center py-8 text-sm text-text-muted">No categories yet.</td></tr>
+                )}
+              </tbody>
+            </table>
+          )}
         </Panel>
       )}
 
@@ -240,10 +298,9 @@ export default function OrgSetup() {
         <Panel title="Employee Directory">
           <div className="p-3 border-b border-border bg-amber/5 flex items-center gap-2 text-xs text-text-muted">
             <ShieldCheck size={14} className="text-amber shrink-0" />
-            Role promotion happens only here. Signup always creates an Employee account — there is no role selection anywhere else.
+            Role promotion happens only here. Signup always creates an Employee account.
           </div>
 
-          {/* Employee filters */}
           <div className="p-3 border-b border-border flex flex-wrap items-center gap-3">
             <div className="relative flex-1 min-w-[200px]">
               <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted" />
@@ -273,43 +330,43 @@ export default function OrgSetup() {
             </div>
           </div>
 
-          <table className="w-full">
-            <thead className="border-b border-border">
-              <tr>
-                <Th>Name</Th><Th>Email</Th><Th>Department</Th><Th>Role</Th><Th />
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border">
-              {filteredEmployees.map((e) => (
-                <tr key={e.email} className="hover:bg-surface-hover">
-                  <Td className="font-medium">{e.name}</Td>
-                  <Td className="text-text-muted font-mono text-xs">{e.email}</Td>
-                  <Td className="text-text-muted">{e.dept}</Td>
-                  <Td>
-                    <span className={`text-xs px-2 py-1 rounded border font-mono ${roleColors[e.role] ?? ""}`}>
-                      {e.role}
-                    </span>
-                  </Td>
-                  <Td className="text-right">
-                    <Button
-                      variant="ghost"
-                      className="!px-2 !py-1 text-xs"
-                      onClick={() => setPromoteTarget(e)}
-                    >
-                      Change Role
-                    </Button>
-                  </Td>
-                </tr>
-              ))}
-              {filteredEmployees.length === 0 && (
-                <tr>
-                  <td colSpan={5} className="text-center py-8 text-sm text-text-muted">
-                    No employees match your filters.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
+          {usersLoading ? (
+            <p className="text-sm text-text-muted text-center py-8">Loading...</p>
+          ) : (
+            <table className="w-full">
+              <thead className="border-b border-border">
+                <tr><Th>Name</Th><Th>Email</Th><Th>Department</Th><Th>Role</Th><Th /></tr>
+              </thead>
+              <tbody className="divide-y divide-border">
+                {filteredEmployees.map((e) => (
+                  <tr key={e.id} className="hover:bg-surface-hover">
+                    <Td className="font-medium">{e.name}</Td>
+                    <Td className="text-text-muted font-mono text-xs">{e.email}</Td>
+                    <Td className="text-text-muted">{e.dept}</Td>
+                    <Td>
+                      <span className={`text-xs px-2 py-1 rounded border font-mono ${roleColors[e.role] ?? ""}`}>
+                        {formatRole(e.role)}
+                      </span>
+                    </Td>
+                    <Td className="text-right">
+                      <Button
+                        variant="ghost"
+                        className="!px-2 !py-1 text-xs"
+                        onClick={() => setPromoteTarget(e)}
+                      >
+                        Change Role
+                      </Button>
+                    </Td>
+                  </tr>
+                ))}
+                {filteredEmployees.length === 0 && (
+                  <tr>
+                    <td colSpan={5} className="text-center py-8 text-sm text-text-muted">No employees match your filters.</td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          )}
         </Panel>
       )}
 
@@ -330,7 +387,7 @@ export default function OrgSetup() {
       )}
       {promoteTarget && (
         <PromoteEmployeeModal
-          employee={promoteTarget}
+          employee={promoteTarget as any}
           onClose={() => setPromoteTarget(null)}
           onSave={savePromotion}
         />

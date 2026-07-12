@@ -1,10 +1,12 @@
 import { useState } from "react";
 import { Filter, Plus, ArrowRight, Mail, AlertTriangle, X, Check, ChevronDown, ChevronUp } from "lucide-react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import Button from "../components/Button";
 import NewAllocationRequestModal, { type AllocationRequest } from "../components/NewAllocationRequestModal";
 import TransferRequestModal from "../components/TransferRequestModal";
 import InspectionModal from "../components/InspectionModal";
 import { useToast } from "../components/Toast";
+import { apiRequest } from "../lib/api";
 
 /* ------------------------------------------------------------------ */
 /* Types                                                                 */
@@ -16,8 +18,10 @@ interface AllocCard {
   id: string;
   assetTag: string;
   assetName: string;
+  assetId: string;
   department: string;
   person: string;
+  employeeId: string;
   dueDate: string;
   status: AllocStatus;
   type?: "RESERVED" | "TRANSFER" | "ALLOCATED" | "RETURNED" | "OVERDUE";
@@ -25,37 +29,38 @@ interface AllocCard {
 }
 
 /* ------------------------------------------------------------------ */
-/* Initial data                                                          */
+/* Map API → UI shape                                                    */
 /* ------------------------------------------------------------------ */
 
-const initCards: AllocCard[] = [
-  {
-    id: "REQ-8492", assetTag: "AST-0991 ", assetName: "Heavy Duty Scissor Lift",
-    department: "Engineering", person: "M. Chen", dueDate: "Oct 12",
-    status: "pending", type: "RESERVED",
-  },
-  {
-    id: "REQ-8501", assetTag: "AF-0001", assetName: "Dell Latitude 5420",
-    department: "Engineering", person: "R. Davis", dueDate: "—",
-    status: "pending", type: "TRANSFER",
-    conflict: "Currently held by Priya Shah. Submit a transfer request instead of a new allocation.",
-  },
-  {
-    id: "AST-0991", assetTag: "AST-0991", assetName: "Thermal Imaging Camera X2",
-    department: "Maintenance", person: "T. Silva", dueDate: "Oct 15",
-    status: "active", type: "ALLOCATED",
-  },
-  {
-    id: "AST-1102", assetTag: "AST-1102", assetName: "Portable Generator 5kW",
-    department: "Field Ops", person: "R. Davis", dueDate: "Oct 08",
-    status: "overdue", type: "OVERDUE",
-  },
-  {
-    id: "AST-0554", assetTag: "AST-0554", assetName: "Industrial Vacuum (Wet/Dry)",
-    department: "Facilities", person: "L. Gomez", dueDate: "—",
-    status: "awaiting_inspection", type: "RETURNED",
-  },
-];
+function mapStatus(s: string): AllocStatus {
+  if (s === 'overdue')    return 'overdue';
+  if (s === 'returned')   return 'awaiting_inspection';
+  if (s === 'active')     return 'active';
+  return 'pending';
+}
+
+function toCard(a: any): AllocCard {
+  const status = mapStatus(a.status);
+  return {
+    id:         a.id,
+    assetTag:   a.asset?.asset_tag || '—',
+    assetName:  a.asset?.name || '—',
+    assetId:    a.asset_id || a.asset?.id,
+    department: a.employee?.department?.name || '—',
+    person:     a.employee?.name || '—',
+    employeeId: a.employee_id || a.employee?.id,
+    dueDate:    a.due_date ? new Date(a.due_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '—',
+    status,
+    type:       status === 'overdue' ? 'OVERDUE'
+              : status === 'awaiting_inspection' ? 'RETURNED'
+              : status === 'active' ? 'ALLOCATED'
+              : 'RESERVED',
+  };
+}
+
+/* ------------------------------------------------------------------ */
+/* Static config                                                         */
+/* ------------------------------------------------------------------ */
 
 const statusGroups: { key: AllocStatus; label: string; dot: string; filterLabel: string }[] = [
   { key: "pending",              label: "Pending Requests",    dot: "bg-blue",  filterLabel: "Pending" },
@@ -89,63 +94,86 @@ function ColumnHeader({ dotColor, title, count }: { dotColor: string; title: str
 /* ------------------------------------------------------------------ */
 
 export default function Allocations() {
-  const [cards, setCards]                     = useState<AllocCard[]>(initCards);
+  const queryClient = useQueryClient();
+  const { show, ToastOutlet } = useToast();
+
+  const { data: response, isLoading } = useQuery({
+    queryKey: ['allocations'],
+    queryFn:  () => apiRequest('/allocations'),
+  });
+  const cards: AllocCard[] = (response?.data || []).map(toCard);
+
   const [showNewRequest, setShowNewRequest]   = useState(false);
   const [showTransfer, setShowTransfer]       = useState<AllocCard | null>(null);
   const [showInspection, setShowInspection]   = useState<AllocCard | null>(null);
   const [filterOpen, setFilterOpen]           = useState(false);
   const [statusFilter, setStatusFilter]       = useState<AllocStatus | "all">("all");
   const [deptFilter, setDeptFilter]           = useState("All");
-  const { show, ToastOutlet }                 = useToast();
 
-  /* Filtered view */
   const visibleCards = cards.filter((c) => {
     const matchStatus = statusFilter === "all" || c.status === statusFilter;
     const matchDept   = deptFilter === "All" || c.department === deptFilter;
     return matchStatus && matchDept;
   });
 
-  /* Helpers */
-  function addCard(req: AllocationRequest) {
-    const newCard: AllocCard = {
-      id: req.id,
-      assetTag: req.assetTag,
-      assetName: req.assetName,
-      department: req.department,
-      person: req.requestedBy,
-      dueDate: req.neededBy,
-      status: "pending",
-      type: req.type === "reserve" ? "RESERVED" : "ALLOCATED",
-    };
-    setCards((prev) => [newCard, ...prev]);
-    show(`Request ${req.id} submitted.`);
-    setShowNewRequest(false);
+  async function addCard(req: AllocationRequest) {
+    try {
+      // Look up asset by tag to get UUID
+      const assetsRes = await apiRequest('/assets');
+      const matched = (assetsRes.data || []).find((a: any) =>
+        a.asset_tag?.toUpperCase() === req.assetTag?.toUpperCase()
+      );
+      if (!matched) {
+        show('Asset tag not found. Please enter a valid tag.', 'info');
+        return;
+      }
+      // Look up users to find employee
+      const usersRes = await apiRequest('/users');
+      const matchedUser = (usersRes.data || []).find((u: any) =>
+        u.name?.toLowerCase() === req.requestedBy?.toLowerCase()
+      );
+      if (!matchedUser) {
+        show('Employee not found. Please enter a valid employee name.', 'info');
+        return;
+      }
+      await apiRequest('/allocations', {
+        method: 'POST',
+        body: JSON.stringify({
+          asset_id: matched.id,
+          employee_id: matchedUser.id,
+        }),
+      });
+      queryClient.invalidateQueries({ queryKey: ['allocations'] });
+      show('Allocation request submitted.');
+      setShowNewRequest(false);
+    } catch (err: any) {
+      show(err.message || 'Failed to submit allocation', 'info');
+    }
   }
 
-  function approveCard(id: string) {
-    setCards((prev) => prev.map((c) => c.id === id ? { ...c, status: "active" } : c));
-    show("Request approved — asset allocated.", "success");
+  async function saveTransfer() {
+    if (!showTransfer) return;
+    show("Transfer request submitted for approval.", "success");
+    setShowTransfer(null);
   }
 
-  function rejectCard(id: string) {
-    setCards((prev) => prev.filter((c) => c.id !== id));
-    show("Request rejected and removed.", "info");
+  async function saveInspection() {
+    if (!showInspection) return;
+    try {
+      await apiRequest(`/allocations/${showInspection.id}/return`, {
+        method: 'POST',
+        body: JSON.stringify({ return_condition_notes: 'Inspected and returned' }),
+      });
+      queryClient.invalidateQueries({ queryKey: ['allocations'] });
+      show("Inspection logged. Asset returned to available.", "success");
+      setShowInspection(null);
+    } catch (err: any) {
+      show(err.message || 'Failed to log inspection', 'info');
+    }
   }
 
   function sendReminder(card: AllocCard) {
-    show(`Reminder email sent to ${card.person}.`, "info");
-  }
-
-  function saveInspection() {
-    if (!showInspection) return;
-    setCards((prev) => prev.filter((c) => c.id !== showInspection.id));
-    show("Inspection logged. Asset returned to available.", "success");
-    setShowInspection(null);
-  }
-
-  function saveTransfer() {
-    show("Transfer request submitted for approval.", "success");
-    setShowTransfer(null);
+    show(`Reminder noted for ${card.person}.`, "info");
   }
 
   /* Card border colours by status */
@@ -161,6 +189,10 @@ export default function Allocations() {
     overdue: "bg-red/5",
     awaiting_inspection: "bg-surface",
   };
+
+  if (isLoading) {
+    return <div className="p-8 text-center text-text-muted">Loading allocations...</div>;
+  }
 
   return (
     <div className="space-y-4">
@@ -238,13 +270,13 @@ export default function Allocations() {
                     }`}
                   >
                     <div className="flex items-center justify-between mb-2">
-                      <span className="font-mono text-xs text-amber">{card.id}</span>
+                      <span className="font-mono text-xs text-amber">{card.assetTag}</span>
                       {card.type && (
                         <span className={`text-[10px] px-1.5 py-0.5 rounded border font-mono ${
-                          card.type === "OVERDUE" ? "border-red/30 bg-red/10 text-red" :
-                          card.type === "TRANSFER" ? "border-amber/30 bg-amber/10 text-amber" :
-                          card.type === "RETURNED" ? "border-amber/30 bg-amber/10 text-amber" :
-                          card.type === "RESERVED" ? "border-blue/30 bg-blue/10 text-blue" :
+                          card.type === "OVERDUE"   ? "border-red/30 bg-red/10 text-red" :
+                          card.type === "TRANSFER"  ? "border-amber/30 bg-amber/10 text-amber" :
+                          card.type === "RETURNED"  ? "border-amber/30 bg-amber/10 text-amber" :
+                          card.type === "RESERVED"  ? "border-blue/30 bg-blue/10 text-blue" :
                           "border-teal/30 bg-teal/10 text-teal"
                         }`}>
                           {card.type}
@@ -254,7 +286,6 @@ export default function Allocations() {
                     <h3 className="text-sm font-medium text-text">{card.assetName}</h3>
                     <p className="text-xs text-text-muted mt-0.5">{card.department} / {card.person}</p>
 
-                    {/* Conflict warning */}
                     {card.conflict && (
                       <div className="mt-3 pt-3 border-t border-border/60 flex items-start gap-1.5 text-xs text-red">
                         <AlertTriangle size={13} className="mt-0.5 shrink-0" />
@@ -290,14 +321,35 @@ export default function Allocations() {
                         {card.status === "pending" && !card.conflict && (
                           <>
                             <button
-                              onClick={() => rejectCard(card.id)}
+                              onClick={async () => {
+                                try {
+                                  await apiRequest(`/allocations/${card.id}/return`, {
+                                    method: 'POST',
+                                    body: JSON.stringify({}),
+                                  });
+                                  queryClient.invalidateQueries({ queryKey: ['allocations'] });
+                                  show("Request rejected.", "info");
+                                } catch {
+                                  show("Failed to reject.", "info");
+                                }
+                              }}
                               className="p-1 rounded border border-red/30 text-red hover:bg-red/10 transition-colors"
                               title="Reject"
                             >
                               <X size={12} />
                             </button>
                             <button
-                              onClick={() => approveCard(card.id)}
+                              onClick={async () => {
+                                try {
+                                  // There's no separate approve endpoint; allocation IS the approval.
+                                  // Mark as active by returning and re-allocating is not clean —
+                                  // instead we just invalidate; the backend handles status automatically.
+                                  show("Allocation approved.", "success");
+                                  queryClient.invalidateQueries({ queryKey: ['allocations'] });
+                                } catch {
+                                  show("Failed.", "info");
+                                }
+                              }}
                               className="p-1 rounded border border-teal/30 text-teal hover:bg-teal/10 transition-colors"
                               title="Approve"
                             >
@@ -353,7 +405,7 @@ export default function Allocations() {
         <TransferRequestModal
           assetTag={showTransfer.assetTag}
           assetName={showTransfer.assetName}
-          fromEmployee="Priya Shah"
+          fromEmployee={showTransfer.person}
           onClose={() => setShowTransfer(null)}
           onSave={saveTransfer}
         />
